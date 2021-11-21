@@ -1,16 +1,9 @@
-import asyncio
 from typing import List
 
 import pytest
 from chiabip158 import PyBIP158
 
 from tests.setup_nodes import setup_simulators_and_wallets, bt
-
-
-@pytest.fixture(scope="module")
-def event_loop():
-    loop = asyncio.get_event_loop()
-    yield loop
 
 
 class TestFilter:

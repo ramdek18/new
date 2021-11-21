@@ -1,4 +1,3 @@
-import asyncio
 import dataclasses
 import logging
 from time import time
@@ -68,12 +67,6 @@ def generate_test_spend_bundle(
     transaction = WALLET_A.generate_signed_transaction(amount, new_puzzle_hash, coin, condition_dic, fee)
     assert transaction is not None
     return transaction
-
-
-@pytest.fixture(scope="module")
-def event_loop():
-    loop = asyncio.get_event_loop()
-    yield loop
 
 
 @pytest.fixture(scope="module")
