@@ -70,7 +70,7 @@ def do_test_spend(
     coin = coin_db.farm_coin(puzzle_hash, farm_time)
 
     # spend it
-    coin_spend = CoinSpend(coin, puzzle_reveal, solution)
+    coin_spend = CoinSpend(coin, puzzle_reveal.to_serialized_program(), solution.to_serialized_program())
 
     spend_bundle = SpendBundle([coin_spend], G2Element())
     coin_db.update_coin_store_for_spend_bundle(spend_bundle, spend_time, MAX_BLOCK_COST_CLVM, COST_PER_BYTE)

@@ -70,10 +70,13 @@ def launch_conditions_and_coinsol(
 
     conditions = [create_launcher, assert_launcher_announcement]
 
+    # TODO: address hint error and remove ignore
+    #       error: Argument 2 to "CoinSpend" has incompatible type "Program"; expected "SerializedProgram"  [arg-type]
+    #       error: Argument 3 to "CoinSpend" has incompatible type "SExp"; expected "SerializedProgram"  [arg-type]
     launcher_coin_spend = CoinSpend(
         launcher_coin,
-        SINGLETON_LAUNCHER,
-        launcher_solution,
+        SINGLETON_LAUNCHER,  # type: ignore[arg-type]
+        launcher_solution,  # type: ignore[arg-type]
     )
 
     return conditions, launcher_coin_spend
@@ -174,10 +177,13 @@ def claim_p2_singleton(
             delay_time,
             delay_ph,
         )
+    # TODO: address hint error and remove ignore
+    #       error: Argument 2 to "CoinSpend" has incompatible type "Program"; expected "SerializedProgram"  [arg-type]
+    #       error: Argument 3 to "CoinSpend" has incompatible type "Program"; expected "SerializedProgram"  [arg-type]
     claim_coinsol = CoinSpend(
         p2_singleton_coin,
-        puzzle,
-        solution_for_p2_singleton(p2_singleton_coin, singleton_inner_puzhash),
+        puzzle,  # type: ignore[arg-type]
+        solution_for_p2_singleton(p2_singleton_coin, singleton_inner_puzhash),  # type: ignore[arg-type]
     )
     return assertion, announcement, claim_coinsol
 
@@ -190,9 +196,12 @@ def spend_to_delayed_puzzle(
     delay_time: uint64,
     delay_ph: bytes32,
 ) -> CoinSpend:
+    # TODO: address hint error and remove ignore
+    #       error: Argument 2 to "CoinSpend" has incompatible type "Program"; expected "SerializedProgram"  [arg-type]
+    #       error: Argument 3 to "CoinSpend" has incompatible type "Program"; expected "SerializedProgram"  [arg-type]
     claim_coinsol = CoinSpend(
         p2_singleton_coin,
-        pay_to_singleton_or_delay_puzzle(launcher_id, delay_time, delay_ph),
-        solution_for_p2_delayed_puzzle(output_amount),
+        pay_to_singleton_or_delay_puzzle(launcher_id, delay_time, delay_ph),  # type: ignore[arg-type]
+        solution_for_p2_delayed_puzzle(output_amount),  # type: ignore[arg-type]
     )
     return claim_coinsol

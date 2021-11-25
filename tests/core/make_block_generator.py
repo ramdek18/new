@@ -55,7 +55,7 @@ def make_spend_bundle(count: int) -> SpendBundle:
         puzzle_reveal = puzzle_hash_db[coin.puzzle_hash]
         conditions = conditions_for_payment(coin)
         solution = solution_for_conditions(conditions)
-        coin_spend = CoinSpend(coin, puzzle_reveal, solution)
+        coin_spend = CoinSpend(coin, puzzle_reveal, solution.to_serialized_program())
         coin_spends.append(coin_spend)
 
     spend_bundle = SpendBundle(coin_spends, blspy.G2Element())

@@ -88,7 +88,10 @@ def coin_spend_for_lock_coin(
 ) -> CoinSpend:
     puzzle_reveal = LOCK_INNER_PUZZLE.curry(prev_coin.as_list(), subtotal)
     coin = Coin(coin.name(), puzzle_reveal.get_tree_hash(), uint64(0))
-    coin_spend = CoinSpend(coin, puzzle_reveal, Program.to(0))
+    # TODO: address hint error and remove ignore
+    #       error: Argument 2 to "CoinSpend" has incompatible type "Program"; expected "SerializedProgram"  [arg-type]
+    #       error: Argument 3 to "CoinSpend" has incompatible type "SExp"; expected "SerializedProgram"  [arg-type]
+    coin_spend = CoinSpend(coin, puzzle_reveal, Program.to(0))  # type: ignore[arg-type]
     return coin_spend
 
 
@@ -120,8 +123,13 @@ def spend_bundle_for_spendable_ccs(
     # figure out what the output amounts are by running the inner puzzles & solutions
     output_amounts = []
     for cc_spend_info, inner_solution in zip(spendable_cc_list, inner_solutions):
+        # TODO: address hint error and remove ignore
+        #       error: Argument 1 to "conditions_dict_for_solution" has incompatible type "Program"; expected
+        #       "SerializedProgram"  [arg-type]
+        #       error: Argument 2 to "conditions_dict_for_solution" has incompatible type "Program"; expected
+        #       "SerializedProgram"  [arg-type]
         error, conditions, cost = conditions_dict_for_solution(
-            cc_spend_info.inner_puzzle, inner_solution, INFINITE_COST
+            cc_spend_info.inner_puzzle, inner_solution, INFINITE_COST  # type: ignore[arg-type]
         )
         total = 0
         if conditions:
@@ -157,7 +165,11 @@ def spend_bundle_for_spendable_ccs(
             next_bundle,
             subtotals[index],
         ]
-        coin_spend = CoinSpend(input_coins[index], puzzle_reveal, Program.to(solution))
+        # TODO: address hint error and remove ignore
+        #       error: Argument 2 to "CoinSpend" has incompatible type "Program"; expected "SerializedProgram"
+        #       [arg-type]
+        #       error: Argument 3 to "CoinSpend" has incompatible type "SExp"; expected "SerializedProgram"  [arg-type]
+        coin_spend = CoinSpend(input_coins[index], puzzle_reveal, Program.to(solution))  # type: ignore[arg-type]
         coin_spends.append(coin_spend)
 
     if sigs is None or sigs == []:

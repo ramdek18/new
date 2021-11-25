@@ -78,7 +78,7 @@ def create_multiple_ref_generator(args: MultipleCompressorArg, spend_bundle: Spe
         GeneratorArg(FAKE_BLOCK_HEIGHT1, args.arg[0].generator),
         GeneratorArg(FAKE_BLOCK_HEIGHT2, args.arg[1].generator),
     ]
-    return BlockGenerator(program, generator_args)
+    return BlockGenerator(program.to_serialized_program(), generator_args)
 
 
 def spend_bundle_to_coin_spend_entry_list(bundle: SpendBundle) -> List[Any]:

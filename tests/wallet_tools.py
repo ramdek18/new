@@ -149,9 +149,15 @@ class WalletTool:
                     ConditionWithArgs(ConditionOpcode.ASSERT_COIN_ANNOUNCEMENT, [primary_announcement_hash])
                 )
                 main_solution = self.make_solution(condition_dic)
-                spends.append(CoinSpend(coin, puzzle, main_solution))
+                spends.append(CoinSpend(coin, puzzle.to_serialized_program(), main_solution.to_serialized_program()))
             else:
-                spends.append(CoinSpend(coin, puzzle, self.make_solution(secondary_coins_cond_dic)))
+                spends.append(
+                    CoinSpend(
+                        coin,
+                        puzzle.to_serialized_program(),
+                        self.make_solution(secondary_coins_cond_dic).to_serialized_program(),
+                    )
+                )
         return spends
 
     def sign_transaction(self, coin_spends: List[CoinSpend]) -> SpendBundle:
