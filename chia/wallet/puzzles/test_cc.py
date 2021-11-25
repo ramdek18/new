@@ -83,7 +83,10 @@ def issue_cc_from_farmed_coin(
     # this is just a coincidence... for more complicated puzzles, you'll likely have to do some real work
 
     solution = Program.to(output_conditions)
-    coin_spend = CoinSpend(farmed_coin, farmed_puzzle, solution)
+    # TODO: address hint error and remove ignore
+    #       error: Argument 2 to "CoinSpend" has incompatible type "Program"; expected "SerializedProgram"  [arg-type]
+    #       error: Argument 3 to "CoinSpend" has incompatible type "Program"; expected "SerializedProgram"  [arg-type]
+    coin_spend = CoinSpend(farmed_coin, farmed_puzzle, solution)  # type: ignore[arg-type]
     spend_bundle = SpendBundle([coin_spend], NULL_SIGNATURE)
     return genesis_coin_checker, spend_bundle
 
@@ -206,7 +209,10 @@ def test_spend_zero_coin(mod_code: Program, coin_checker_for_farmed_coin):
     wrapped_cc_puzzle_hash = cc_puzzle_hash_for_inner_puzzle_hash(mod_code, genesis_coin_checker, eve_inner_puzzle_hash)
 
     solution = solution_for_pay_to_any([(wrapped_cc_puzzle_hash, 0)])
-    coin_spend = CoinSpend(farmed_coin, ANYONE_CAN_SPEND_PUZZLE, solution)
+    # TODO: address hint error and remove ignore
+    #       error: Argument 2 to "CoinSpend" has incompatible type "Program"; expected "SerializedProgram"  [arg-type]
+    #       error: Argument 3 to "CoinSpend" has incompatible type "Program"; expected "SerializedProgram"  [arg-type]
+    coin_spend = CoinSpend(farmed_coin, ANYONE_CAN_SPEND_PUZZLE, solution)  # type: ignore[arg-type]
     spendable_cc_list = spendable_cc_list_from_coin_spend(coin_spend, hash_to_puzzle_f)
     assert len(spendable_cc_list) == 1
     zero_cc_spendable = spendable_cc_list[0]
