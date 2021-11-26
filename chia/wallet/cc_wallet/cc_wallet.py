@@ -552,8 +552,13 @@ class CCWallet:
         pubkey, private = await self.wallet_state_manager.get_keys(puzzle_hash)
         synthetic_secret_key = calculate_synthetic_secret_key(private, DEFAULT_HIDDEN_PUZZLE_HASH)
         sigs: List[G2Element] = []
+        # TODO: address hint error and remove ignore
+        #       error: Argument 1 to "conditions_dict_for_solution" has incompatible type "Program"; expected
+        #       "SerializedProgram"  [arg-type]
+        #       error: Argument 2 to "conditions_dict_for_solution" has incompatible type "Program"; expected
+        #       "SerializedProgram"  [arg-type]
         error, conditions, cost = conditions_dict_for_solution(
-            innerpuz, innersol, self.wallet_state_manager.constants.MAX_BLOCK_COST_CLVM
+            innerpuz, innersol, self.wallet_state_manager.constants.MAX_BLOCK_COST_CLVM  # type: ignore[arg-type]
         )
         if conditions is not None:
             for _, msg in pkm_pairs_for_conditions_dict(
@@ -747,7 +752,12 @@ class CCWallet:
                 None,
                 None,
             ]
-            list_of_solutions.append(CoinSpend(coin, puzzle_reveal, Program.to(solution)))
+            # TODO: address hint error and remove ignore
+            #       error: Argument 2 to "CoinSpend" has incompatible type "Program"; expected "SerializedProgram"
+            #       [arg-type]
+            #       error: Argument 3 to "CoinSpend" has incompatible type "Program"; expected "SerializedProgram"
+            #       [arg-type]
+            list_of_solutions.append(CoinSpend(coin, puzzle_reveal, Program.to(solution)))  # type: ignore[arg-type]
 
         aggsig = AugSchemeMPL.aggregate(sigs)
         return SpendBundle(list_of_solutions, aggsig)

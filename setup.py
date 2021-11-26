@@ -7,7 +7,8 @@ dependencies = [
     "chiavdf==1.0.3",  # timelord and vdf verification
     "chiabip158==1.0",  # bip158-style wallet filters
     "chiapos==1.0.6",  # proof of space
-    "clvm==0.9.7",
+    # TODO: set to the new release version
+    "clvm @ git+https://github.com/Chia-Network/clvm@pep-561",
     "clvm_rs==0.1.15",
     "clvm_tools==0.4.3",
     "aiohttp==3.7.4",  # HTTP server for full node rpc
@@ -29,6 +30,7 @@ dependencies = [
     "click==7.1.2",  # For the CLI
     "dnspythonchia==2.2.0",  # Query DNS seeds
     "watchdog==2.1.6",  # Filesystem event watching - watches keyring.yaml
+    "typing-extensions==4.0.0",  # Backports of new typing module features
 ]
 
 upnp_dependencies = [

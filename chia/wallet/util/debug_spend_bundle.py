@@ -72,7 +72,12 @@ def debug_spend_bundle(spend_bundle, agg_sig_additional_data=DEFAULT_CONSTANTS.A
         print(f"  with id {coin_name}")
         print()
         print(f"\nbrun -y main.sym '{bu_disassemble(puzzle_reveal)}' '{bu_disassemble(solution)}'")
-        error, conditions, cost = conditions_dict_for_solution(puzzle_reveal, solution, INFINITE_COST)
+        # TODO: address hint error and remove ignore
+        #       error: Argument 1 to "conditions_dict_for_solution" has incompatible type "Program"; expected
+        #       "SerializedProgram"  [arg-type]
+        #       error: Argument 2 to "conditions_dict_for_solution" has incompatible type "Program"; expected
+        #       "SerializedProgram"  [arg-type]
+        error, conditions, cost = conditions_dict_for_solution(puzzle_reveal, solution, INFINITE_COST)  # type: ignore[arg-type]  # noqa E501
         if error:
             print(f"*** error {error}")
         elif conditions is not None:
