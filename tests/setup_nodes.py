@@ -43,6 +43,45 @@ def constants_for_dic(dic):
     return test_constants.replace(**dic)
 
 
+import contextlib
+import time
+
+import psutil
+
+def get_chia_processes():
+    us = psutil.Process()
+
+    parents = set()
+    chia_processes = set()
+    for process in psutil.process_iter():
+        with contextlib.suppress(psutil.NoSuchProcess, psutil.AccessDenied):
+            if process == us:
+                continue
+
+            if process.name().startswith("chia_"):
+                chia_processes.add(process)
+                parents.update(process.parents())
+
+    return set(chia_processes) - set(parents)
+
+
+def gotta_kill_em_all():
+    yield
+
+    chia_processes = get_chia_processes()
+
+    while len(chia_processes) > 0:
+        time.sleep(1)
+
+        print(f"gotta_kill_em_all: About to kill {len(chia_processes)} processes")
+        for process in chia_processes:
+            with contextlib.suppress(psutil.NoSuchProcess, psutil.AccessDenied):
+                print(f"gotta_kill_em_all: Killing {process}")
+                process.kill()
+
+        chia_processes = get_chia_processes()
+
+
 async def _teardown_nodes(node_aiters: List) -> None:
     awaitables = [node_iter.__anext__() for node_iter in node_aiters]
     for sublist_awaitable in asyncio.as_completed(awaitables):
@@ -50,6 +89,8 @@ async def _teardown_nodes(node_aiters: List) -> None:
             await sublist_awaitable
         except StopAsyncIteration:
             pass
+
+    gotta_kill_em_all()
 
 
 async def setup_daemon(btools):
@@ -130,6 +171,7 @@ async def setup_wallet_node(
     introducer_port=None,
     key_seed=None,
     starting_height=None,
+    initial_num_public_keys=5,
 ):
     with TempKeyring() as keychain:
         config = bt.config["wallet"]
@@ -137,7 +179,7 @@ async def setup_wallet_node(
         config["rpc_port"] = port + 1000
         if starting_height is not None:
             config["starting_height"] = starting_height
-        config["initial_num_public_keys"] = 5
+        config["initial_num_public_keys"] = initial_num_public_keys
 
         entropy = token_bytes(32)
         if key_seed is None:
@@ -188,7 +230,9 @@ async def setup_wallet_node(
         keychain.delete_all_keys()
 
 
-async def setup_harvester(port, farmer_port, consensus_constants: ConsensusConstants, b_tools):
+async def setup_harvester(
+    port, farmer_port, consensus_constants: ConsensusConstants, b_tools, start_service: bool = True
+):
     kwargs = service_kwargs_for_harvester(b_tools.root_path, b_tools.config["harvester"], consensus_constants)
     kwargs.update(
         server_listen_ports=[port],
@@ -200,9 +244,10 @@ async def setup_harvester(port, farmer_port, consensus_constants: ConsensusConst
 
     service = Service(**kwargs)
 
-    await service.start()
+    if start_service:
+        await service.start()
 
-    yield service._node, service._node.server
+    yield service
 
     service.stop()
     await service.wait_closed()
@@ -213,6 +258,7 @@ async def setup_farmer(
     consensus_constants: ConsensusConstants,
     b_tools,
     full_node_port: Optional[uint16] = None,
+    start_service: bool = True,
 ):
     config = bt.config["farmer"]
     config_pool = bt.config["pool"]
@@ -238,9 +284,10 @@ async def setup_farmer(
 
     service = Service(**kwargs)
 
-    await service.start()
+    if start_service:
+        await service.start()
 
-    yield service._api, service._node.server
+    yield service
 
     service.stop()
     await service.wait_closed()
@@ -268,7 +315,7 @@ async def setup_introducer(port):
 
 
 async def setup_vdf_client(port):
-    vdf_task_1 = asyncio.create_task(spawn_process(self_hostname, port, 1))
+    vdf_task_1 = asyncio.create_task(spawn_process(self_hostname, port, 1, bt.config.get("prefer_ipv6")))
 
     def stop():
         asyncio.create_task(kill_processes())
@@ -281,9 +328,9 @@ async def setup_vdf_client(port):
 
 
 async def setup_vdf_clients(port):
-    vdf_task_1 = asyncio.create_task(spawn_process(self_hostname, port, 1))
-    vdf_task_2 = asyncio.create_task(spawn_process(self_hostname, port, 2))
-    vdf_task_3 = asyncio.create_task(spawn_process(self_hostname, port, 3))
+    vdf_task_1 = asyncio.create_task(spawn_process(self_hostname, port, 1, bt.config.get("prefer_ipv6")))
+    vdf_task_2 = asyncio.create_task(spawn_process(self_hostname, port, 2, bt.config.get("prefer_ipv6")))
+    vdf_task_3 = asyncio.create_task(spawn_process(self_hostname, port, 3, bt.config.get("prefer_ipv6")))
 
     def stop():
         asyncio.create_task(kill_processes())
@@ -300,7 +347,7 @@ async def setup_timelord(port, full_node_port, sanitizer, consensus_constants: C
     config = b_tools.config["timelord"]
     config["port"] = port
     config["full_node_peer"]["port"] = full_node_port
-    config["sanitizer_mode"] = sanitizer
+    config["bluebox_mode"] = sanitizer
     config["fast_algorithm"] = False
     if sanitizer:
         config["vdf_server"]["port"] = 7999
@@ -408,19 +455,26 @@ async def setup_simulators_and_wallets(
     starting_height=None,
     key_seed=None,
     starting_port=50000,
+    initial_num_public_keys=5,
 ):
+    print(f" ==== setup_simulators_and_wallets A")
     with TempKeyring() as keychain1, TempKeyring() as keychain2:
+        print(f" ==== setup_simulators_and_wallets B")
         simulators: List[FullNodeAPI] = []
         wallets = []
         node_iters = []
 
+        print(f" ==== setup_simulators_and_wallets C")
         consensus_constants = constants_for_dic(dic)
         for index in range(0, simulator_count):
+            print(f" ==== setup_simulators_and_wallets C {index} A")
             port = starting_port + index
             db_name = f"blockchain_test_{port}.db"
+            print(f" ==== setup_simulators_and_wallets C {index} B")
             bt_tools = await create_block_tools_async(
                 consensus_constants, const_dict=dic, keychain=keychain1
             )  # block tools modifies constants
+            print(f" ==== setup_simulators_and_wallets C {index} C")
             sim = setup_full_node(
                 bt_tools.constants,
                 db_name,
@@ -428,18 +482,25 @@ async def setup_simulators_and_wallets(
                 bt_tools,
                 simulator=True,
             )
+            print(f" ==== setup_simulators_and_wallets C {index} D")
             simulators.append(await sim.__anext__())
+            print(f" ==== setup_simulators_and_wallets C {index} E")
             node_iters.append(sim)
+            print(f" ==== setup_simulators_and_wallets C {index} F")
 
+        print(f" ==== setup_simulators_and_wallets D")
         for index in range(0, wallet_count):
+            print(f" ==== setup_simulators_and_wallets D {index} A")
             if key_seed is None:
                 seed = std_hash(uint32(index))
             else:
                 seed = key_seed
             port = starting_port + 5000 + index
+            print(f" ==== setup_simulators_and_wallets D {index} B")
             bt_tools = await create_block_tools_async(
                 consensus_constants, const_dict=dic, keychain=keychain2
             )  # block tools modifies constants
+            print(f" ==== setup_simulators_and_wallets D {index} C")
             wlt = setup_wallet_node(
                 port,
                 bt_tools.constants,
@@ -447,25 +508,33 @@ async def setup_simulators_and_wallets(
                 None,
                 key_seed=seed,
                 starting_height=starting_height,
+                initial_num_public_keys=initial_num_public_keys,
             )
+            print(f" ==== setup_simulators_and_wallets D {index} D")
             wallets.append(await wlt.__anext__())
+            print(f" ==== setup_simulators_and_wallets D {index} E")
             node_iters.append(wlt)
+            print(f" ==== setup_simulators_and_wallets D {index} F")
 
+        print(f" ==== setup_simulators_and_wallets E")
         yield simulators, wallets
+        print(f" ==== setup_simulators_and_wallets F")
 
         await _teardown_nodes(node_iters)
+        print(f" ==== setup_simulators_and_wallets G")
+    print(f" ==== setup_simulators_and_wallets H")
 
 
-async def setup_farmer_harvester(consensus_constants: ConsensusConstants):
+async def setup_farmer_harvester(consensus_constants: ConsensusConstants, start_services: bool = True):
     node_iters = [
-        setup_harvester(21234, 21235, consensus_constants, bt),
-        setup_farmer(21235, consensus_constants, bt),
+        setup_harvester(21234, 21235, consensus_constants, bt, start_services),
+        setup_farmer(21235, consensus_constants, bt, start_service=start_services),
     ]
 
-    harvester, harvester_server = await node_iters[0].__anext__()
-    farmer, farmer_server = await node_iters[1].__anext__()
+    harvester_service = await node_iters[0].__anext__()
+    farmer_service = await node_iters[1].__anext__()
 
-    yield harvester, farmer
+    yield harvester_service, farmer_service
 
     await _teardown_nodes(node_iters)
 
@@ -495,8 +564,10 @@ async def setup_full_system(
         ]
 
         introducer, introducer_server = await node_iters[0].__anext__()
-        harvester, harvester_server = await node_iters[1].__anext__()
-        farmer, farmer_server = await node_iters[2].__anext__()
+        harvester_service = await node_iters[1].__anext__()
+        harvester = harvester_service._node
+        farmer_service = await node_iters[2].__anext__()
+        farmer = farmer_service._node
 
         async def num_connections():
             count = len(harvester.server.all_connections.items())

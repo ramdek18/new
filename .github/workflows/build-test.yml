@@ -11,7 +11,8 @@ on:
       - '**'
 
 jobs:
-  get_configuration:
+  configure:
+    name: Configure
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
@@ -21,23 +22,23 @@ jobs:
         with:
           python-version: '3.8'
       - name: Find test paths
-        id: get_configuration
+        id: configure
         run: |
-          python tests/build-job-matrix.py
+          echo ::set-output name=configuration::$(python tests/build-job-matrix.py --per file --verbose)
 
     outputs:
-      configuration: ${{ steps.get_configuration.outputs.configuration }}
+      configuration: ${{ steps.configure.outputs.configuration }}
 
   test:
     # Should match JOB_NAME below
     name: ${{ matrix.configuration.name }} ${{ matrix.os.emoji }} ${{ matrix.python.name }}
-    needs: get_configuration
+    needs: configure
     runs-on: ${{ matrix.os.runs-on }}
-    timeout-minutes: 60
+    timeout-minutes: ${{ matrix.configuration.job_timeout }}
     strategy:
       fail-fast: false
       matrix:
-        configuration: ${{ fromJson(needs.get_configuration.outputs.configuration) }}
+        configuration: ${{ fromJson(needs.configure.outputs.configuration) }}
         os:
           - emoji: 🍎
             matrix: macos
@@ -52,16 +53,16 @@ jobs:
 #            name: Windows
 #            runs-on: windows-latest
         python:
-          - name: '3.7'
-            action: '3.7'
-            apt: '3.7'
-            install_sh: '3.7'
-            matrix: '3.7'
-          - name: '3.8'
-            action: '3.8'
-            apt: '3.8'
-            install_sh: '3.8'
-            matrix: '3.8'
+#          - name: '3.7'
+#            action: '3.7'
+#            apt: '3.7'
+#            install_sh: '3.7'
+#            matrix: '3.7'
+#          - name: '3.8'
+#            action: '3.8'
+#            apt: '3.8'
+#            install_sh: '3.8'
+#            matrix: '3.8'
           - name: '3.9'
             action: '3.9'
             apt: '3.9'
@@ -127,6 +128,7 @@ jobs:
             ${{ runner.os }}-pip-
 
       - name: Checkout test blocks and plots
+        if: matrix.configuration.checkout_blocks_and_plots
         uses: actions/checkout@v2
         with:
           repository: 'Chia-Network/test-cache'
@@ -156,36 +158,42 @@ jobs:
           BUILD_VDF_CLIENT: "N"
         run: |
           brew install boost
-          sh install.sh
+          sh install.sh -d
 
       - name: Run install script (Ubuntu)
         if: matrix.os.matrix == 'ubuntu'
         env:
           INSTALL_PYTHON_VERSION: ${{ matrix.python.install_sh }}
         run: |
-          sh install.sh
+          sh install.sh -d
 
       - name: Install timelord
+        if: matrix.configuration.install_timelord
         run: |
           . ./activate
           sh install-timelord.sh
           ./vdf_bench square_asm 400000
 
-      - name: Install developer requirements
-        run: |
-          . ./activate
-          venv/bin/python -m pip install pytest pytest-asyncio pytest-xdist pytest-monitor coverage pytest-cov
-
       - name: Test blockchain code with pytest
         run: |
           . ./activate
-          venv/bin/pytest --cov=chia --cov=tests --cov-report=term-missing --cov-report=xml:coverage.xml "tests/${{ matrix.configuration.path }}" -s -v --durations 0
+          venv/bin/coverage run --rcfile=.coveragerc venv/bin/pytest tests/${{ matrix.configuration.path }} -s -v --durations 0 ${{ matrix.configuration.pytest_parallel_args }}
+          # venv/bin/pytest --cov=chia --cov=tests --cov-report=term-missing --cov-report=xml:coverage.xml tests/${{ matrix.configuration.path }} -s -v --durations 0 ${{ matrix.configuration.pytest_parallel_args }}
+          ls -la
+          find . -iname '*coverage*'
 
       - name: Coverage Processing
         run: |
+          venv/bin/coverage combine --rcfile=.coveragerc .coverage.*
+          venv/bin/coverage xml --rcfile=.coveragerc -o coverage.xml
+
           mkdir coverage_reports
           cp .coverage "coverage_reports/.coverage.${{ env.JOB_NAME }}"
           cp coverage.xml "coverage_reports/coverage.${{ env.JOB_NAME }}.xml"
+
+      - name: Coverage report
+        run: |
+          venv/bin/coverage report --rcfile=.coveragerc --show-missing
 
       - name: Publish Coverage
         uses: actions/upload-artifact@v2
@@ -193,6 +201,12 @@ jobs:
           name: coverage
           path: coverage_reports/*
           if-no-files-found: error
+
+      - name: Publish Coverage
+        uses: actions/upload-artifact@v2
+        with:
+          name: dot
+          path: ./*.dot
 
   coverage:
     name: Coverage - ${{ matrix.os.name }} ${{ matrix.python.name }}
@@ -241,7 +255,9 @@ jobs:
           cp .coverage "all_coverage_report/.coverage.all"
           cp coverage.xml "all_coverage_report/coverage.all.xml"
 
-          coverage report --fail-under=35 --ignore-errors --show-missing
+      - name: Coverage report
+        run: |
+          coverage report --rcfile=.coveragerc --fail-under=35 --ignore-errors --show-missing
           diff-cover --compare-branch=${{ fromJSON(format('[{0}, {1}]', toJSON(github.event.before), toJSON(format('origin/{0}', github.base_ref))))[github.base_ref != ''] }} coverage.xml
 
       - name: Upload Coverage

@@ -250,9 +250,15 @@ async def validate_block_body(
     byte_array_tx: List[bytes32] = []
 
     for coin in additions + coinbase_additions:
-        byte_array_tx.append(bytearray(coin.puzzle_hash))
+        # TODO: address hint error and remove ignore
+        #       error: Argument 1 to "append" of "list" has incompatible type "bytearray"; expected "bytes32"
+        #       [arg-type]
+        byte_array_tx.append(bytearray(coin.puzzle_hash))  # type: ignore[arg-type]
     for coin_name in removals:
-        byte_array_tx.append(bytearray(coin_name))
+        # TODO: address hint error and remove ignore
+        #       error: Argument 1 to "append" of "list" has incompatible type "bytearray"; expected "bytes32"
+        #       [arg-type]
+        byte_array_tx.append(bytearray(coin_name))  # type: ignore[arg-type]
 
     bip158: PyBIP158 = PyBIP158(byte_array_tx)
     encoded_filter = bytes(bip158.GetEncoded())
@@ -316,7 +322,7 @@ async def validate_block_body(
                     curr_block_generator,
                     min(constants.MAX_BLOCK_COST_CLVM, curr.transactions_info.cost),
                     cost_per_byte=constants.COST_PER_BYTE,
-                    safe_mode=False,
+                    mempool_mode=False,
                 )
                 removals_in_curr, additions_in_curr = tx_removals_and_additions(curr_npc_result.npc_list)
             else:
@@ -353,7 +359,6 @@ async def validate_block_body(
                 rem_coin,
                 height,
                 height,
-                True,
                 False,
                 block.foliage_transaction_block.timestamp,
             )
@@ -378,7 +383,6 @@ async def validate_block_body(
                     new_coin,
                     confirmed_height,
                     uint32(0),
-                    False,
                     False,
                     confirmed_timestamp,
                 )
