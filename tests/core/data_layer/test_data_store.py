@@ -18,6 +18,7 @@ from chia.types.blockchain_format.program import Program
 from chia.types.blockchain_format.tree_hash import bytes32
 from chia.util.byte_types import hexstr_to_bytes
 from chia.util.db_wrapper import DBWrapper
+from chia.util.hash import std_hash
 
 from tests.core.data_layer.util import add_0123_example, add_01234567_example, Example
 
@@ -181,7 +182,11 @@ async def test_insert_terminal_node_does_nothing_if_matching(data_store: DataSto
         before = await cursor.fetchall()
 
     async with data_store.db_wrapper.locked_transaction():
-        await data_store._insert_terminal_node(key=kv_node.key, value=kv_node.value)
+        await data_store._insert_terminal_node(
+            key_hash=std_hash(kv_node.key),
+            value_hash=std_hash(kv_node.value),
+            node_hash=kv_node.hash,
+        )
 
     async with data_store.db_wrapper.locked_transaction():
         cursor = await data_store.db.execute("SELECT * FROM node")
@@ -243,12 +248,32 @@ async def test_get_pairs(
 
     pairs = await data_store.get_pairs(tree_id=tree_id)
 
-    assert [node.hash for node in pairs] == example.terminal_nodes
+    assert {node.hash for node in pairs} == set(example.terminal_nodes)
 
 
 @pytest.mark.asyncio
 async def test_get_pairs_when_empty(data_store: DataStore, tree_id: bytes32) -> None:
     pairs = await data_store.get_pairs(tree_id=tree_id)
+
+    assert pairs == []
+
+
+@pytest.mark.asyncio
+async def test_get_pairs_ordered(
+    data_store: DataStore,
+    tree_id: bytes32,
+    create_example: Callable[[DataStore, bytes32], Awaitable[Example]],
+) -> None:
+    example = await create_example(data_store, tree_id)
+
+    pairs = await data_store.get_pairs_ordered(tree_id=tree_id)
+
+    assert [node.hash for node in pairs] == example.terminal_nodes
+
+
+@pytest.mark.asyncio
+async def test_get_pairs_ordered_when_empty(data_store: DataStore, tree_id: bytes32) -> None:
+    pairs = await data_store.get_pairs_ordered(tree_id=tree_id)
 
     assert pairs == []
 
@@ -288,31 +313,6 @@ async def test_inserting_duplicate_key_fails(
 
 @pytest.mark.asyncio()
 async def test_autoinsert_balances_from_scratch(data_store: DataStore, tree_id: bytes32) -> None:
-    expected = Program.to(
-        (
-            (
-                (
-                    (b"\x00", b"\x10\x00"),
-                    (b"\x01", b"\x11\x01"),
-                ),
-                (
-                    (b"\x02", b"\x12\x02"),
-                    (b"\x03", b"\x13\x03"),
-                ),
-            ),
-            (
-                (
-                    (b"\x04", b"\x14\x04"),
-                    (b"\x05", b"\x15\x05"),
-                ),
-                (
-                    (b"\x06", b"\x16\x06"),
-                    (b"\x07", b"\x17\x07"),
-                ),
-            ),
-        ),
-    )
-
     for n in [0, 4, 2, 6, 1, 3, 5, 7]:
         await data_store.autoinsert(
             key=bytes([n]),
@@ -320,44 +320,20 @@ async def test_autoinsert_balances_from_scratch(data_store: DataStore, tree_id: 
             tree_id=tree_id,
         )
 
-    result = await data_store.get_tree_as_program(tree_id=tree_id)
-
-    assert result == expected
+        pairs = await data_store.get_pairs(tree_id=tree_id)
+        ancestor_counts = [len(await data_store.get_ancestors(node_hash=pair.hash, tree_id=tree_id)) for pair in pairs]
+        # assert that the depth of all pairs are within one of each other
+        assert max(ancestor_counts) - min(ancestor_counts) in {0, 1}
 
 
 @pytest.mark.asyncio()
 async def test_autoinsert_balances_gaps(data_store: DataStore, tree_id: bytes32) -> None:
     await add_01234567_example(data_store=data_store, tree_id=tree_id)
 
-    expected = Program.to(
-        (
-            (
-                (
-                    (b"\x00", b"\x10\x00"),
-                    (b"\x01", b"\x11\x01"),
-                ),
-                (
-                    (b"\x02", b"\x12\x02"),
-                    (b"\x03", b"\x13\x03"),
-                ),
-            ),
-            (
-                (
-                    (b"\x04", b"\x14\x04"),
-                    (b"\x05", b"\x15\x05"),
-                ),
-                (
-                    (b"\x06", b"\x16\x06"),
-                    (b"\x07", b"\x17\x07"),
-                ),
-            ),
-        ),
-    )
-
     ns = [1, 5]
 
     for n in ns:
-        await data_store.delete(key=Program.to(bytes([n])), tree_id=tree_id)
+        await data_store.delete(key=bytes([n]), tree_id=tree_id)
 
     for n in ns:
         await data_store.autoinsert(
@@ -366,9 +342,10 @@ async def test_autoinsert_balances_gaps(data_store: DataStore, tree_id: bytes32)
             tree_id=tree_id,
         )
 
-    result = await data_store.get_tree_as_program(tree_id=tree_id)
-
-    assert result == expected
+    pairs = await data_store.get_pairs(tree_id=tree_id)
+    ancestor_counts = [len(await data_store.get_ancestors(node_hash=pair.hash, tree_id=tree_id)) for pair in pairs]
+    # assert that all pairs are at the same depth
+    assert len(set(ancestor_counts)) == 1
 
 
 @pytest.mark.asyncio()
@@ -397,7 +374,7 @@ async def test_delete_from_left_both_terminal(data_store: DataStore, tree_id: by
         ),
     )
 
-    await data_store.delete(key=Program.to(b"\x04"), tree_id=tree_id)
+    await data_store.delete(key=b"\x04", tree_id=tree_id)
     result = await data_store.get_tree_as_program(tree_id=tree_id)
 
     assert result == expected
@@ -426,8 +403,8 @@ async def test_delete_from_left_other_not_terminal(data_store: DataStore, tree_i
         ),
     )
 
-    await data_store.delete(key=Program.to(b"\x04"), tree_id=tree_id)
-    await data_store.delete(key=Program.to(b"\x05"), tree_id=tree_id)
+    await data_store.delete(key=b"\x04", tree_id=tree_id)
+    await data_store.delete(key=b"\x05", tree_id=tree_id)
     result = await data_store.get_tree_as_program(tree_id=tree_id)
 
     assert result == expected
@@ -459,7 +436,7 @@ async def test_delete_from_right_both_terminal(data_store: DataStore, tree_id: b
         ),
     )
 
-    await data_store.delete(key=Program.to(b"\x03"), tree_id=tree_id)
+    await data_store.delete(key=b"\x03", tree_id=tree_id)
     result = await data_store.get_tree_as_program(tree_id=tree_id)
 
     assert result == expected
@@ -488,8 +465,8 @@ async def test_delete_from_right_other_not_terminal(data_store: DataStore, tree_
         ),
     )
 
-    await data_store.delete(key=Program.to(b"\x03"), tree_id=tree_id)
-    await data_store.delete(key=Program.to(b"\x02"), tree_id=tree_id)
+    await data_store.delete(key=b"\x03", tree_id=tree_id)
+    await data_store.delete(key=b"\x02", tree_id=tree_id)
     result = await data_store.get_tree_as_program(tree_id=tree_id)
 
     assert result == expected
@@ -624,8 +601,8 @@ invalid_program_hex = b"\xab\xcd".hex()
 @pytest.mark.parametrize(
     argnames="key_value",
     argvalues=[
-        {"key": another_bytes_32.hex(), "value": None},
-        {"key": None, "value": another_bytes_32.hex()},
+        {"key": another_bytes_32, "value": None},
+        {"key": None, "value": another_bytes_32},
     ],
     ids=["key", "value"],
 )
@@ -635,6 +612,7 @@ async def test_check_internal_key_value_are_null(
     key_value: Dict[str, Optional[str]],
 ) -> None:
     async with raw_data_store.db_wrapper.locked_transaction():
+        await raw_data_store.db.execute("INSERT INTO blob(hash, value) VALUES(:b32, :b32)", {"b32": another_bytes_32})
         await raw_data_store.db.execute(
             "INSERT INTO node(hash, node_type, key, value) VALUES(:hash, :node_type, :key, :value)",
             {"hash": a_bytes_32.hex(), "node_type": NodeType.INTERNAL, **key_value},
@@ -774,13 +752,14 @@ async def test_check_hashes_internal(raw_data_store: DataStore) -> None:
 @pytest.mark.asyncio
 async def test_check_hashes_terminal(raw_data_store: DataStore) -> None:
     async with raw_data_store.db_wrapper.locked_transaction():
+        await raw_data_store.db.execute("INSERT INTO blob(hash, value) VALUES(:b32, :b32)", {"b32": another_bytes_32})
         await raw_data_store.db.execute(
             "INSERT INTO node(hash, node_type, key, value) VALUES(:hash, :node_type, :key, :value)",
             {
                 "hash": a_bytes_32.hex(),
                 "node_type": NodeType.TERMINAL,
-                "key": Program.to((1, 2)).as_bin().hex(),
-                "value": Program.to((1, 2)).as_bin().hex(),
+                "key": another_bytes_32,
+                "value": another_bytes_32,
             },
         )
 
