@@ -1385,7 +1385,13 @@ class WalletNode:
                     res_ses: RespondSESInfo = peer_request_cache.ses_requests[request.get_hash()]
                 else:
                     res_ses = await peer.request_ses_hashes(request)
+                if len(res_ses.reward_chain_hash) == 0:
+                    self.log.error("Failed validation 12")
+                    return False
                 ses_0 = res_ses.reward_chain_hash[0]
+                if len(res_ses.heights[0]) == 0:
+                    self.log.error("Failed validation 13")
+                    return False
                 last_height = res_ses.heights[0][-1]  # Last height in sub epoch
                 end = last_height
                 for idx, ses in enumerate(weight_proof.sub_epochs):
@@ -1407,8 +1413,14 @@ class WalletNode:
                 request_h_response = RequestHeaderBlocks(request_start, request_end)
                 if request_h_response.get_hash() in peer_request_cache.block_requests:
                     res_h_blocks: RespondHeaderBlocks = peer_request_cache.block_requests[request_h_response.get_hash()]
+                    if res_h_blocks is None:
+                        self.log.error("Failed validation 10")
+                        return False
                 else:
                     res_h_blocks = await peer.request_header_blocks(request_h_response)
+                    if res_h_blocks is None:
+                        self.log.error("Failed validation 11")
+                        return False
                     peer_request_cache.block_requests[request_h_response.get_hash()] = res_h_blocks
                 self.log.info(f"Fetching blocks: {request_start} - {request_end}")
                 blocks.extend([bl for bl in res_h_blocks.header_blocks if bl.height >= start])
