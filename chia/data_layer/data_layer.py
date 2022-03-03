@@ -119,14 +119,20 @@ class DataLayer:
                 key = change["key"]
                 await self.data_store.delete(key, tree_id, hint_keys_values)
 
-        await self.data_store.get_tree_root(tree_id)
         root = await self.data_store.get_tree_root(tree_id)
         # todo return empty node hash from get_tree_root
         if root.node_hash is not None:
             node_hash = root.node_hash
         else:
             node_hash = self.none_bytes  # todo change
+
+        # todo do we need a lock here ?
         transaction_record = await self.wallet_rpc.dl_update_root(tree_id, node_hash, fee)
+        new_root_wallet = await self.wallet_rpc.dl_latest_singleton(tree_id)
+        assert new_root_wallet
+        await self.data_store.increment_submissions(tree_id, root.generation)
+        if node_hash != new_root_wallet.root:
+            raise Exception("local root does not match wallet")
         assert transaction_record
         # todo register callback to change status in data store
         # await self.data_store.change_root_status(root, Status.COMMITTED)
@@ -157,12 +163,21 @@ class DataLayer:
             self.log.error(f"Failed to get root for {store_id.hex()}")
         return latest
 
-    async def get_local_root(self, store_id: bytes32) -> Optional[bytes32]:
+    async def get_local_root(self, store_id: bytes32) -> Optional[Root]:
         res = await self.data_store.get_tree_root(tree_id=store_id)
         if res is None:
             self.log.error(f"Failed to get root for {store_id.hex()}")
-            return None
-        return res.node_hash
+        return res
+
+    async def resubmit_root(self, store_id: bytes32, fee: uint64) -> TransactionRecord:
+        root = await self.data_store.get_tree_root(tree_id=store_id)
+        assert root.node_hash
+        root_wallet = await self.wallet_rpc.dl_latest_singleton(store_id)
+        assert root_wallet
+        if root.node_hash == root_wallet.root:
+            raise Exception("local root matches wallet root")
+        await self.data_store.increment_submissions(store_id, root.generation)
+        return await self.wallet_rpc.dl_update_root(store_id, root.node_hash, fee)
 
     async def get_root_history(self, store_id: bytes32) -> List[SingletonRecord]:
         records = await self.wallet_rpc.dl_history(store_id)

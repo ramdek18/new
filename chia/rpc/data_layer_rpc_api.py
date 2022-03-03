@@ -173,7 +173,9 @@ class DataLayerRpcApi:
         if self.service is None:
             raise Exception("Data layer not created")
         res = await self.service.get_local_root(store_id)
-        return {"hash": res}
+        if res is None:
+            raise Exception(f"Failed to get root for {store_id.hex()}")
+        return {"hash": res.node_hash, "submissions": res.submissions}
 
     async def get_roots(self, request: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -240,6 +242,15 @@ class DataLayerRpcApi:
         for rec in records:
             res.insert(0, {"root_hash": rec.root, "confirmed": rec.confirmed, "timestamp": rec.timestamp})
         return {"root_history": res}
+
+    async def resubmit_root(self, request: Dict[str, Any]) -> Dict[str, Any]:
+        """get hash of latest tree root"""
+        store_id = bytes32(hexstr_to_bytes(request["id"]))
+        fee = get_fee(self.service.config, request)
+        if self.service is None:
+            raise Exception("Data layer not created")
+        transaction_record = await self.service.resubmit_root(store_id, fee)
+        return {"tx_id": transaction_record.name}
 
     async def get_kv_diff(self, request: Dict[str, Any]) -> Dict[str, Any]:
         """
