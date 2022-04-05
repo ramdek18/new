@@ -1,5 +1,7 @@
 from typing import Dict, List, Optional
 
+from typing_extensions import Protocol
+
 from chia.consensus.block_record import BlockRecord
 from chia.types.blockchain_format.sized_bytes import bytes32
 from chia.types.blockchain_format.sub_epoch_summary import SubEpochSummary
@@ -7,9 +9,13 @@ from chia.types.blockchain_format.vdf import VDFInfo
 from chia.types.header_block import HeaderBlock
 from chia.types.weight_proof import SubEpochChallengeSegment
 from chia.util.ints import uint32
+from chia.util.misc import ProtocolChecker
 
 
-class BlockchainInterface:
+check_blockchain_interface = ProtocolChecker["BlockchainInterface"]()
+
+
+class BlockchainInterface(Protocol):
     def get_peak(self) -> Optional[BlockRecord]:
         pass
 
@@ -66,9 +72,7 @@ class BlockchainInterface:
         pass
 
     def try_block_record(self, header_hash: bytes32) -> Optional[BlockRecord]:
-        if self.contains_block(header_hash):
-            return self.block_record(header_hash)
-        return None
+        pass
 
     async def persist_sub_epoch_challenge_segments(
         self, sub_epoch_summary_height: bytes32, segments: List[SubEpochChallengeSegment]
