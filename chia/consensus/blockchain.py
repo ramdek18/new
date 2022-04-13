@@ -1,10 +1,8 @@
 import asyncio
-import dataclasses
 import logging
 import multiprocessing
 import traceback
-from concurrent.futures import Executor
-from concurrent.futures.process import ProcessPoolExecutor
+from concurrent.futures import Executor, ThreadPoolExecutor
 from enum import Enum
 from multiprocessing.context import BaseContext
 from pathlib import Path
@@ -47,8 +45,6 @@ from chia.util.errors import ConsensusError, Err
 from chia.util.generator_tools import get_block_header, tx_removals_and_additions
 from chia.util.inline_executor import InlineExecutor
 from chia.util.ints import uint16, uint32, uint64, uint128
-from chia.util.setproctitle import getproctitle, setproctitle
-from chia.util.streamable import recurse_jsonify
 
 log = logging.getLogger(__name__)
 
@@ -69,7 +65,6 @@ class ReceiveBlockResult(Enum):
 
 class Blockchain(BlockchainInterface):
     constants: ConsensusConstants
-    constants_json: Dict
 
     # peak of the blockchain
     _peak_height: Optional[uint32]
@@ -124,18 +119,14 @@ class Blockchain(BlockchainInterface):
             if cpu_count > 61:
                 cpu_count = 61  # Windows Server 2016 has an issue https://bugs.python.org/issue26903
             num_workers = max(cpu_count - reserved_cores, 1)
-            self.pool = ProcessPoolExecutor(
+            self.pool = ThreadPoolExecutor(
                 max_workers=num_workers,
-                mp_context=multiprocessing_context,
-                initializer=setproctitle,
-                initargs=(f"{getproctitle()}_worker",),
             )
             log.info(f"Started {num_workers} processes for block validation")
 
         self.constants = consensus_constants
         self.coin_store = coin_store
         self.block_store = block_store
-        self.constants_json = recurse_jsonify(dataclasses.asdict(self.constants))
         self._shut_down = False
         await self._load_chain_from_store(blockchain_dir)
         self._seen_compact_proofs = set()
@@ -630,7 +621,6 @@ class Blockchain(BlockchainInterface):
     ) -> List[PreValidationResult]:
         return await pre_validate_blocks_multiprocessing(
             self.constants,
-            self.constants_json,
             self,
             blocks,
             self.pool,
@@ -642,22 +632,23 @@ class Blockchain(BlockchainInterface):
             validate_signatures=validate_signatures,
         )
 
-    async def run_generator(self, unfinished_block: bytes, generator: BlockGenerator, height: uint32) -> NPCResult:
+    async def run_generator(
+        self, unfinished_block: UnfinishedBlock, generator: BlockGenerator, height: uint32
+    ) -> NPCResult:
         task = asyncio.get_running_loop().run_in_executor(
             self.pool,
             _run_generator,
-            self.constants_json,
+            self.constants,
             unfinished_block,
-            bytes(generator),
+            generator,
             height,
         )
-        npc_result_bytes = await task
-        if npc_result_bytes is None:
+        npc_result = await task
+        if npc_result is None:
             raise ConsensusError(Err.UNKNOWN)
-        ret = NPCResult.from_bytes(npc_result_bytes)
-        if ret.error is not None:
-            raise ConsensusError(ret.error)
-        return ret
+        if npc_result.error is not None:
+            raise ConsensusError(Err(npc_result.error))
+        return npc_result
 
     def contains_block(self, header_hash: bytes32) -> bool:
         """
