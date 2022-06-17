@@ -384,3 +384,6 @@ class DataLayer:
                 await asyncio.sleep(fetch_data_interval)
             except asyncio.CancelledError:
                 pass
+
+    async def validate_data(self) -> None:
+        await self.data_store.check()

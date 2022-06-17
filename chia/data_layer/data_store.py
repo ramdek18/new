@@ -10,6 +10,7 @@ from chia.data_layer.data_layer_errors import (
     NodeHashError,
     TerminalLeftRightError,
     TreeGenerationIncrementingError,
+    AncestorTableError,
 )
 from chia.data_layer.data_layer_types import (
     InternalNode,
@@ -368,12 +369,48 @@ class DataStore:
         if len(bad_node_hashes) > 0:
             raise NodeHashError(node_hashes=bad_node_hashes)
 
+    async def _check_ancestors_table(self, *, lock: bool = True) -> None:
+        async with self.db_wrapper.locked_transaction(lock=lock):
+            cursor = await self.db.execute("SELECT * FROM root")
+            roots = [Root.from_row(row=row) async for row in cursor]
+            hashes: List[bytes32] = []
+
+            for root in roots:
+                if root.node_hash is None:
+                    continue
+                nodes = await self.get_left_to_right_ordering(root.node_hash, root.tree_id, True, lock=False)
+                for node in nodes:
+                    if isinstance(node, InternalNode):
+                        for child_hash in (node.left_hash, node.right_hash):
+                            cursor = await self.db.execute(
+                                """
+                                SELECT ancestors.ancestor AS ancestor, MAX(ancestors.generation) AS generation
+                                FROM ancestors
+                                WHERE ancestors.hash == :hash
+                                AND ancestors.tree_id == :tree_id
+                                AND ancestors.generation <= :generation
+                                GROUP BY hash
+                                """,
+                                {
+                                    "hash": child_hash.hex(),
+                                    "tree_id": root.tree_id.hex(),
+                                    "generation": root.generation,
+                                },
+                            )
+                            row = await cursor.fetchone()
+                            if row is None or row["ancestor"] != node.hash.hex():
+                                hashes.append(child_hash)
+
+            if len(hashes) > 0:
+                raise AncestorTableError(node_hashes=hashes)
+
     _checks: Tuple[Callable[["DataStore"], Awaitable[None]], ...] = (
         _check_internal_key_value_are_null,
         _check_internal_left_right_are_bytes32,
         _check_terminal_left_right_are_null,
         _check_roots_are_incrementing,
         _check_hashes,
+        _check_ancestors_table,
     )
 
     async def create_tree(self, tree_id: bytes32, *, lock: bool = True, status: Status = Status.PENDING) -> bool:
@@ -959,18 +996,18 @@ class DataStore:
         lock: bool = True,
         num_nodes: int = 1000000000,
     ) -> List[Node]:
-        ancestors = await self.get_ancestors(node_hash, tree_id, lock=True)
-        path_hashes = {node_hash, *(ancestor.hash for ancestor in ancestors)}
-        # The hashes that need to be traversed, initialized here as the hashes to the right of the ancestors
-        # ordered from shallowest (root) to deepest (leaves) so .pop() from the end gives the deepest first.
         if not get_subtree_only:
+            ancestors = await self.get_ancestors(node_hash, tree_id, lock=lock)
+            path_hashes = {node_hash, *(ancestor.hash for ancestor in ancestors)}
+            # The hashes that need to be traversed, initialized here as the hashes to the right of the ancestors
+            # ordered from shallowest (root) to deepest (leaves) so .pop() from the end gives the deepest first.
             stack = [ancestor.right_hash for ancestor in reversed(ancestors) if ancestor.right_hash not in path_hashes]
         else:
             stack = []
         nodes: List[Node] = []
         while len(nodes) < num_nodes:
             try:
-                node = await self.get_node(node_hash)
+                node = await self.get_node(node_hash, lock=lock)
             except Exception:
                 return []
             if isinstance(node, TerminalNode):
