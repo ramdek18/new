@@ -31,7 +31,6 @@ from chia.data_layer.data_layer_types import (
 from chia.data_layer.data_layer_util import row_to_node
 from chia.types.blockchain_format.program import Program
 from chia.types.blockchain_format.sized_bytes import bytes32
-from chia.util.byte_types import hexstr_to_bytes
 from chia.util.db_wrapper import DBWrapper
 from chia.util.ints import uint16
 
@@ -392,7 +391,7 @@ class DataStore:
         async with self.db_wrapper.locked_transaction(lock=lock):
             cursor = await self.db.execute("SELECT DISTINCT tree_id FROM root")
 
-        tree_ids = {bytes32(hexstr_to_bytes(row["tree_id"])) async for row in cursor}
+        tree_ids = {bytes32.from_hexstr(row["tree_id"]) async for row in cursor}
 
         return tree_ids
 
