@@ -74,3 +74,13 @@ jobs:
       concurrency_name: windows
       configuration: ${{ needs.configure.outputs.configuration }}
       runs-on: windows-latest
+
+  all:
+    uses: ./.github/workflows/all.yml
+    if: always()
+    needs:
+      - macos
+      - ubuntu
+      - windows
+    with:
+      needs: ${{ toJSON(needs) }}

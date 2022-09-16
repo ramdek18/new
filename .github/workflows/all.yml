@@ -1,0 +1,25 @@
+name: all
+
+on:
+  workflow_call:
+    inputs:
+      needs:
+        required: true
+        type: string
+
+jobs:
+  all:
+    name: All
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require all successes
+        shell: python
+        env:
+          RESULTS: ${{ toJSON(fromJSON(inputs.needs).*.result) }}
+        run: |
+          import json
+          import os
+          import sys
+
+          results = json.loads(os.environ["RESULTS"])
+          sys.exit(0 if all(result == "success" for result in results) else 1)
