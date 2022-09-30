@@ -1,3 +1,4 @@
+import datetime
 import logging
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -37,20 +38,31 @@ def get_file_log_handler(
     return handler
 
 
+def iso8601_format_time(self, record, datefmt=None):
+    as_utc = datetime.datetime.fromtimestamp(record.created, datetime.timezone.utc)
+    as_local = as_utc.astimezone()
+    return as_local.isoformat(timespec="milliseconds")
+
+
+class ISO8601Formatter(logging.Formatter):
+    formatTime = iso8601_format_time
+
+
+class ISO8601ColoredFormatter(colorlog.ColoredFormatter):
+    formatTime = iso8601_format_time
+
+
 def initialize_logging(service_name: str, logging_config: Dict, root_path: Path, beta_root_path: Optional[Path] = None):
     file_name_length = 33 - len(service_name)
-    log_date_format = "%Y-%m-%dT%H:%M:%S"
-    file_log_formatter = logging.Formatter(
-        fmt=f"%(asctime)s.%(msecs)03d {service_name} %(name)-{file_name_length}s: %(levelname)-8s %(message)s",
-        datefmt=log_date_format,
+    file_log_formatter = ISO8601Formatter(
+        fmt=f"%(asctime)s {service_name} %(name)-{file_name_length}s: %(levelname)-8s %(message)s",
     )
     if logging_config["log_stdout"]:
         handler = colorlog.StreamHandler()
         handler.setFormatter(
-            colorlog.ColoredFormatter(
-                f"%(asctime)s.%(msecs)03d {service_name} %(name)-{file_name_length}s: "
+            ISO8601ColoredFormatter(
+                f"%(asctime)s {service_name} %(name)-{file_name_length}s: "
                 f"%(log_color)s%(levelname)-8s%(reset)s %(message)s",
-                datefmt=log_date_format,
                 reset=True,
             )
         )
@@ -65,7 +77,7 @@ def initialize_logging(service_name: str, logging_config: Dict, root_path: Path,
         log_syslog_host = logging_config.get("log_syslog_host", "localhost")
         log_syslog_port = logging_config.get("log_syslog_port", 514)
         log_syslog_handler = SysLogHandler(address=(log_syslog_host, log_syslog_port))
-        log_syslog_handler.setFormatter(logging.Formatter(fmt=f"{service_name} %(message)s", datefmt=log_date_format))
+        log_syslog_handler.setFormatter(ISO8601Formatter(fmt=f"%(asctime)s {service_name} %(message)s"))
         logger = logging.getLogger()
         logger.addHandler(log_syslog_handler)
 
