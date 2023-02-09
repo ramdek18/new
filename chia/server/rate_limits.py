@@ -58,6 +58,12 @@ class RateLimiter:
             self.non_tx_cumulative_size = 0
         try:
             message_type = ProtocolMessageTypes(message.type)
+            if message_type == ProtocolMessageTypes.wrapped_compressed:
+                # For the purposes of rate limiting, the compressed size
+                # is the one used.
+                from chia.protocols.full_node_protocol import WrappedCompressed
+                wrappedcompressed = WrappedCompressed.from_bytes(message.data)
+                message_type = ProtocolMessageTypes(wrappedcompressed.inner_type)
         except Exception as e:
             log.warning(f"Invalid message: {message.type}, {e}")
             return True

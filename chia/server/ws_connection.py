@@ -9,12 +9,14 @@ from dataclasses import dataclass, field
 from secrets import token_bytes
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Set, Tuple, Union
 
+import zstd
 from aiohttp import ClientSession, WSCloseCode, WSMessage, WSMsgType
 from aiohttp.client import ClientWebSocketResponse
 from aiohttp.web import WebSocketResponse
 from typing_extensions import Protocol, final
 
 from chia.cmds.init_funcs import chia_full_version_str
+from chia.protocols import full_node_protocol
 from chia.protocols.protocol_message_types import ProtocolMessageTypes
 from chia.protocols.protocol_state_machine import message_response_ok
 from chia.protocols.protocol_timing import API_EXCEPTION_BAN_SECONDS, INTERNAL_PROTOCOL_ERROR_BAN_SECONDS
@@ -32,6 +34,7 @@ from chia.util.log_exceptions import log_exceptions
 # Each message is prepended with LENGTH_BYTES bytes specifying the length
 from chia.util.network import class_for_type, is_localhost
 from chia.util.streamable import Streamable
+from chia.util.zstandard import get_decompressed_size
 
 # Max size 2^(8*4) which is around 4GiB
 LENGTH_BYTES: int = 4
@@ -109,6 +112,10 @@ class WSChiaConnection:
     version: str = field(default_factory=str)
     protocol_version: str = field(default_factory=str)
 
+    # Used by the compressor
+    sending_compressed_enabled: bool = False
+    compress_if_at_least_size: int = 8 * 1024
+
     @classmethod
     def create(
         cls,
@@ -126,6 +133,8 @@ class WSChiaConnection:
         outbound_rate_limit_percent: int,
         local_capabilities_for_handshake: List[Tuple[uint16, str]],
         session: Optional[ClientSession] = None,
+        enable_sending_compressed: bool = False,
+        compress_if_at_least_size: int = 8 * 1024,
     ) -> WSChiaConnection:
 
         assert ws._writer is not None
@@ -159,6 +168,10 @@ class WSChiaConnection:
             is_outbound=is_outbound,
             received_message_callback=received_message_callback,
             session=session,
+            # Used by the compressor
+            sending_compressed_enabled=enable_sending_compressed,
+            compress_if_at_least_size=max(100, compress_if_at_least_size),
+            # considering overhead, 100 is a sensible absolute minimum
         )
 
     def _get_extra_info(self, name: str) -> Optional[Any]:
@@ -541,33 +554,134 @@ class WSChiaConnection:
             self.log.debug(f"Exception {e} while waiting to retry sending rate limited message")
             return None
 
+    def _potentially_compress(self, message: Message) -> Message:
+        """Returns a new message if it was compressed, otherwise the original message"""
+        if message.type == ProtocolMessageTypes.wrapped_compressed.value:
+            # Just return the message if already compressed
+            # (happens in case of retrying a rate limited message)
+            self.log.debug(
+                "_potentially_compress called with already compressed message, "
+                f"compressed size {len(message.data)}. OK if rate-limited before."
+            )
+            return message
+        # If the receiver can handle compressed messages,
+        # and we are configured to send them compressed,
+        # and the message is large enough to be beneficial for compression (CPU-wise and space on the wire)
+        # then compress it by transforming the original message into a new compressed message
+        if (
+            self.sending_compressed_enabled
+            and Capability.CAN_DECOMPRESS_MESSAGES in self.peer_capabilities
+            and len(message.data) >= self.compress_if_at_least_size
+        ):
+            wrappedcompressed = full_node_protocol.WrappedCompressed(message.type, bytes(zstd.compress(message.data)))
+            compressed = Message(
+                uint8(ProtocolMessageTypes.wrapped_compressed.value),
+                message.id,
+                bytes(wrappedcompressed)
+            )
+            # Validating and safe-guarding
+            if get_decompressed_size(wrappedcompressed.data) == len(message.data):
+                self.log.debug(
+                    f"Message compressed for sending: was {len(message.data)} bytes, "
+                    f"compressed to {len(compressed.data)}"
+                )
+                return compressed
+            else:
+                # If negative something is wrong with the data
+                self.log.warning(
+                    f"Compression generated faulty result: #{get_decompressed_size(wrappedcompressed.data)}. "
+                    "Sending uncompressed instead."
+                )
+                return message
+        return message
+
     async def _send_message(self, message: Message) -> None:
         encoded: bytes = bytes(message)
         size = len(encoded)
         assert len(encoded) < (2 ** (LENGTH_BYTES * 8))
+
+        # 'message' can already be compressed, if rate-limited and now retried
+
+        message_type = ProtocolMessageTypes(message.type)
+        if message_type == ProtocolMessageTypes.wrapped_compressed:
+            if len(message.data) > 0:
+                wrappedcompressed = full_node_protocol.WrappedCompressed.from_bytes(message.data)
+                message_type = ProtocolMessageTypes(wrappedcompressed.inner_type)
+
+        message_to_send = self._potentially_compress(message)
+
+        if message_to_send != message:
+            encoded = bytes(message_to_send)
+            size = len(encoded)
+
         if not self.outbound_rate_limiter.process_msg_and_check(
-            message, self.local_capabilities, self.peer_capabilities
+            message_to_send, self.local_capabilities, self.peer_capabilities
         ):
+            if self.sending_compressed_enabled and Capability.CAN_DECOMPRESS_MESSAGES in self.peer_capabilities:
+                more_info = f" (compressed: {message_to_send.type==ProtocolMessageTypes.wrapped_compressed.value})"
+            else:
+                more_info = ""
+
             if not is_localhost(self.peer_host):
                 self.log.debug(
-                    f"Rate limiting ourselves. message type: {ProtocolMessageTypes(message.type).name}, "
-                    f"peer: {self.peer_host}"
+                    f"Rate limiting ourselves. message type: {message_type.name}{more_info}, peer: {self.peer_host}"
                 )
 
                 # TODO: fix this special case. This function has rate limits which are too low.
-                if ProtocolMessageTypes(message.type) != ProtocolMessageTypes.respond_peers:
-                    asyncio.create_task(self._wait_and_retry(message))
+                if message_type != ProtocolMessageTypes.respond_peers:
+                    asyncio.create_task(self._wait_and_retry(message_to_send))
 
                 return None
             else:
                 self.log.debug(
-                    f"Not rate limiting ourselves. message type: {ProtocolMessageTypes(message.type).name}, "
+                    f"Not rate limiting ourselves. message type: {message_type.name}{more_info}, "
                     f"peer: {self.peer_host}"
                 )
 
         await self.ws.send_bytes(encoded)
-        self.log.debug(f"-> {ProtocolMessageTypes(message.type).name} to peer {self.peer_host} {self.peer_node_id}")
+        self.log.debug(f"-> {message_type.name} to peer {self.peer_host} {self.peer_node_id}")
         self.bytes_written += size
+
+    async def _decompress_message(self, full_message_loaded: Message) -> Message:
+        # This method is only called for ProtocolMessageTypes.wrapped_compressed
+        if Capability.CAN_DECOMPRESS_MESSAGES in self.local_capabilities and len(full_message_loaded.data) > 0:
+            wrappedcompressed = full_node_protocol.WrappedCompressed.from_bytes(full_message_loaded.data)
+            # Check the uncompressed size before doing the decompression (must be less than 50 MiB)
+            decompressed_size = get_decompressed_size(wrappedcompressed.data)
+            try:
+                self.log.debug(
+                    f"Received compressed message {ProtocolMessageTypes(wrappedcompressed.inner_type).name}: "
+                    f"compressed {len(full_message_loaded.data)}, decompressed {decompressed_size}"
+                )
+            except ValueError:
+                # This exception happens when trying to get the name of an out-of-range ProtocolMessageTypes
+                err_message = "Received compressed message with invalid ProtocolMessageTypes enum: "
+                f"{wrappedcompressed.inner_type}"
+                await self.ban_peer_bad_protocol(err_message)
+                raise ProtocolError(Err.INVALID_PROTOCOL_MESSAGE, [err_message]) from None
+            from chia.server.server import max_message_size as MAX_MESSAGE_SIZE
+            if decompressed_size > 0 and decompressed_size <= MAX_MESSAGE_SIZE:
+                # Replace the message so it appears as if it was sent uncompressed
+                # The rate limiter has already checked the message (using the size of the compressed message)
+                full_message_loaded = Message(
+                    uint8(wrappedcompressed.inner_type),
+                    full_message_loaded.id,
+                    zstd.decompress(wrappedcompressed.data),
+                )
+                return full_message_loaded
+            else:
+                await self.ban_peer_bad_protocol("Compression: Message is either not using Zstandard or too big")
+                raise ProtocolError(
+                    Err.INVALID_PROTOCOL_MESSAGE,
+                    [
+                        ProtocolMessageTypes(full_message_loaded.type).name,
+                        ProtocolMessageTypes(wrappedcompressed.inner_type).name,
+                    ]
+                )
+        else:
+            err_message = "Received compressed message but not configured to do decompression"
+            await self.ban_peer_bad_protocol(err_message)
+            raise ProtocolError(Err.INVALID_PROTOCOL_MESSAGE, [err_message])
 
     async def _read_one_message(self) -> Optional[Message]:
         try:
@@ -611,7 +725,14 @@ class WSChiaConnection:
             self.bytes_read += len(data)
             self.last_message_time = time.time()
             try:
-                message_type = ProtocolMessageTypes(full_message_loaded.type).name
+                if (
+                    full_message_loaded.type == ProtocolMessageTypes.wrapped_compressed.value
+                    and Capability.CAN_DECOMPRESS_MESSAGES in self.local_capabilities
+                ):
+                    wrappedcompressed = full_node_protocol.WrappedCompressed.from_bytes(full_message_loaded.data)
+                    message_type = ProtocolMessageTypes(wrappedcompressed.inner_type).name
+                else:
+                    message_type = ProtocolMessageTypes(full_message_loaded.type).name
             except Exception:
                 message_type = "Unknown"
             if not self.inbound_rate_limiter.process_msg_and_check(
@@ -631,7 +752,10 @@ class WSChiaConnection:
                         f"Peer surpassed rate limit {self.peer_host}, message: {message_type}, "
                         f"port {self.peer_port} but not disconnecting"
                     )
-                    return full_message_loaded
+                    # Commented so the message can potentially be decompressed
+                    # return full_message_loaded
+            if full_message_loaded.type == ProtocolMessageTypes.wrapped_compressed.value:
+                full_message_loaded = await self._decompress_message(full_message_loaded)
             return full_message_loaded
         elif message.type == WSMsgType.ERROR:
             self.log.error(f"WebSocket Error: {message}")
