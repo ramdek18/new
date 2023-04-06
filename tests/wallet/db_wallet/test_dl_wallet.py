@@ -47,9 +47,7 @@ class TestDLWallet:
         wallet_0 = wallet_node_0.wallet_state_manager.main_wallet
 
         if trusted:
-            wallet_node_0.config["trusted_peers"] = {full_node_server.node_id.hex(): full_node_server.node_id.hex()}
-        else:
-            wallet_node_0.config["trusted_peers"] = {}
+            wallet_node_0.server.trusted_peers = {full_node_server.node_id}
 
         await server_0.start_client(PeerInfo(self_hostname, uint16(full_node_server._port)), None)
 
@@ -97,9 +95,7 @@ class TestDLWallet:
         wallet_0 = wallet_node_0.wallet_state_manager.main_wallet
 
         if trusted:
-            wallet_node_0.config["trusted_peers"] = {full_node_server.node_id.hex(): full_node_server.node_id.hex()}
-        else:
-            wallet_node_0.config["trusted_peers"] = {}
+            wallet_node_0.server.trusted_peers = {full_node_server.node_id}
 
         await server_0.start_client(PeerInfo(self_hostname, uint16(full_node_server._port)), None)
 
@@ -152,11 +148,8 @@ class TestDLWallet:
         wallet_0 = wallet_node_0.wallet_state_manager.main_wallet
 
         if trusted:
-            wallet_node_0.config["trusted_peers"] = {full_node_server.node_id.hex(): full_node_server.node_id.hex()}
-            wallet_node_1.config["trusted_peers"] = {full_node_server.node_id.hex(): full_node_server.node_id.hex()}
-        else:
-            wallet_node_0.config["trusted_peers"] = {}
-            wallet_node_1.config["trusted_peers"] = {}
+            wallet_node_0.server.trusted_peers = {full_node_server.node_id}
+            wallet_node_1.server.trusted_peers = {full_node_server.node_id}
 
         await server_0.start_client(PeerInfo(self_hostname, uint16(full_node_server._port)), None)
         await server_1.start_client(PeerInfo(self_hostname, uint16(full_node_server._port)), None)
@@ -231,9 +224,7 @@ class TestDLWallet:
         wallet_0 = wallet_node_0.wallet_state_manager.main_wallet
 
         if trusted:
-            wallet_node_0.config["trusted_peers"] = {full_node_server.node_id.hex(): full_node_server.node_id.hex()}
-        else:
-            wallet_node_0.config["trusted_peers"] = {}
+            wallet_node_0.server.trusted_peers = {full_node_server.node_id}
 
         await server_0.start_client(PeerInfo(self_hostname, uint16(full_node_server._port)), None)
 
@@ -328,11 +319,8 @@ class TestDLWallet:
         wallet_1 = wallet_node_1.wallet_state_manager.main_wallet
 
         if trusted:
-            wallet_node_0.config["trusted_peers"] = {full_node_server.node_id.hex(): full_node_server.node_id.hex()}
-            wallet_node_1.config["trusted_peers"] = {full_node_server.node_id.hex(): full_node_server.node_id.hex()}
-        else:
-            wallet_node_0.config["trusted_peers"] = {}
-            wallet_node_1.config["trusted_peers"] = {}
+            wallet_node_0.server.trusted_peers = {full_node_server.node_id}
+            wallet_node_1.server.trusted_peers = {full_node_server.node_id}
 
         await server_0.start_client(PeerInfo(self_hostname, uint16(full_node_server._port)), None)
         await server_1.start_client(PeerInfo(self_hostname, uint16(full_node_server._port)), None)

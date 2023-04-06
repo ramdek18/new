@@ -59,15 +59,8 @@ async def test_nft_offer_with_fee(
     token_ph = bytes32(token_bytes())
 
     if trusted:
-        wallet_node_0.config["trusted_peers"] = {
-            full_node_api.full_node.server.node_id.hex(): full_node_api.full_node.server.node_id.hex()
-        }
-        wallet_node_1.config["trusted_peers"] = {
-            full_node_api.full_node.server.node_id.hex(): full_node_api.full_node.server.node_id.hex()
-        }
-    else:
-        wallet_node_0.config["trusted_peers"] = {}
-        wallet_node_1.config["trusted_peers"] = {}
+        wallet_node_0.server.trusted_peers = {full_node_api.full_node.server.node_id}
+        wallet_node_1.server.trusted_peers = {full_node_api.full_node.server.node_id}
 
     await server_0.start_client(PeerInfo(self_hostname, uint16(full_node_server._port)), None)
     await server_1.start_client(PeerInfo(self_hostname, uint16(full_node_server._port)), None)
@@ -289,15 +282,8 @@ async def test_nft_offer_cancellations(self_hostname: str, two_wallet_nodes: Any
     token_ph = bytes32(token_bytes())
 
     if trusted:
-        wallet_node_0.config["trusted_peers"] = {
-            full_node_api.full_node.server.node_id.hex(): full_node_api.full_node.server.node_id.hex()
-        }
-        wallet_node_1.config["trusted_peers"] = {
-            full_node_api.full_node.server.node_id.hex(): full_node_api.full_node.server.node_id.hex()
-        }
-    else:
-        wallet_node_0.config["trusted_peers"] = {}
-        wallet_node_1.config["trusted_peers"] = {}
+        wallet_node_0.server.trusted_peers = {full_node_api.full_node.server.node_id}
+        wallet_node_1.server.trusted_peers = {full_node_api.full_node.server.node_id}
 
     await server_0.start_client(PeerInfo(self_hostname, uint16(full_node_server._port)), None)
     await server_1.start_client(PeerInfo(self_hostname, uint16(full_node_server._port)), None)
@@ -398,15 +384,8 @@ async def test_nft_offer_with_metadata_update(self_hostname: str, two_wallet_nod
     token_ph = bytes32(token_bytes())
 
     if trusted:
-        wallet_node_0.config["trusted_peers"] = {
-            full_node_api.full_node.server.node_id.hex(): full_node_api.full_node.server.node_id.hex()
-        }
-        wallet_node_1.config["trusted_peers"] = {
-            full_node_api.full_node.server.node_id.hex(): full_node_api.full_node.server.node_id.hex()
-        }
-    else:
-        wallet_node_0.config["trusted_peers"] = {}
-        wallet_node_1.config["trusted_peers"] = {}
+        wallet_node_0.server.trusted_peers = {full_node_api.full_node.server.node_id}
+        wallet_node_1.server.trusted_peers = {full_node_api.full_node.server.node_id}
 
     await server_0.start_client(PeerInfo(self_hostname, uint16(full_node_server._port)), None)
     await server_1.start_client(PeerInfo(self_hostname, uint16(full_node_server._port)), None)
@@ -543,15 +522,8 @@ async def test_nft_offer_nft_for_cat(
     token_ph = bytes32(token_bytes())
 
     if trusted:
-        wallet_node_0.config["trusted_peers"] = {
-            full_node_api.full_node.server.node_id.hex(): full_node_api.full_node.server.node_id.hex()
-        }
-        wallet_node_1.config["trusted_peers"] = {
-            full_node_api.full_node.server.node_id.hex(): full_node_api.full_node.server.node_id.hex()
-        }
-    else:
-        wallet_node_0.config["trusted_peers"] = {}
-        wallet_node_1.config["trusted_peers"] = {}
+        wallet_node_0.server.trusted_peers = {full_node_api.full_node.server.node_id}
+        wallet_node_1.server.trusted_peers = {full_node_api.full_node.server.node_id}
 
     await server_0.start_client(PeerInfo(self_hostname, uint16(full_node_server._port)), None)
     await server_1.start_client(PeerInfo(self_hostname, uint16(full_node_server._port)), None)
@@ -789,15 +761,8 @@ async def test_nft_offer_nft_for_nft(self_hostname: str, two_wallet_nodes: Any, 
     token_ph = bytes32(token_bytes())
 
     if trusted:
-        wallet_node_0.config["trusted_peers"] = {
-            full_node_api.full_node.server.node_id.hex(): full_node_api.full_node.server.node_id.hex()
-        }
-        wallet_node_1.config["trusted_peers"] = {
-            full_node_api.full_node.server.node_id.hex(): full_node_api.full_node.server.node_id.hex()
-        }
-    else:
-        wallet_node_0.config["trusted_peers"] = {}
-        wallet_node_1.config["trusted_peers"] = {}
+        wallet_node_0.server.trusted_peers = {full_node_api.full_node.server.node_id}
+        wallet_node_1.server.trusted_peers = {full_node_api.full_node.server.node_id}
 
     await server_0.start_client(PeerInfo(self_hostname, uint16(full_node_server._port)), None)
     await server_1.start_client(PeerInfo(self_hostname, uint16(full_node_server._port)), None)

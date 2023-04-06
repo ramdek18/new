@@ -37,9 +37,7 @@ class TestCATWallet:
 
         ph = await wallet.get_new_puzzlehash()
         if trusted:
-            wallet_node.config["trusted_peers"] = {full_node_server.node_id.hex(): full_node_server.node_id.hex()}
-        else:
-            wallet_node.config["trusted_peers"] = {}
+            wallet_node.server.trusted_peers = {full_node_server.node_id}
 
         await server_2.start_client(PeerInfo(self_hostname, uint16(full_node_server._port)), None)
         for i in range(0, num_blocks):
@@ -101,7 +99,7 @@ class TestCATWallet:
         wallet_node, wallet_server = wallets[0]
         wallet = wallet_node.wallet_state_manager.main_wallet
         ph = await wallet.get_new_puzzlehash()
-        wallet_node.config["trusted_peers"] = {full_node_server.node_id.hex(): full_node_server.node_id.hex()}
+        wallet_node.server.trusted_peers = {full_node_server.node_id}
 
         await wallet_server.start_client(PeerInfo(self_hostname, uint16(full_node_server._port)), None)
         for i in range(0, num_blocks):
@@ -150,11 +148,8 @@ class TestCATWallet:
         api_1 = WalletRpcApi(wallet_node_2)
         ph = await wallet.get_new_puzzlehash()
         if trusted:
-            wallet_node.config["trusted_peers"] = {full_node_server.node_id.hex(): full_node_server.node_id.hex()}
-            wallet_node_2.config["trusted_peers"] = {full_node_server.node_id.hex(): full_node_server.node_id.hex()}
-        else:
-            wallet_node.config["trusted_peers"] = {}
-            wallet_node_2.config["trusted_peers"] = {}
+            wallet_node.server.trusted_peers = {full_node_server.node_id}
+            wallet_node_2.server.trusted_peers = {full_node_server.node_id}
         await server_2.start_client(PeerInfo(self_hostname, uint16(full_node_server._port)), None)
         await server_3.start_client(PeerInfo(self_hostname, uint16(full_node_server._port)), None)
 
@@ -359,9 +354,7 @@ class TestCATWallet:
 
         ph = await wallet.get_new_puzzlehash()
         if trusted:
-            wallet_node.config["trusted_peers"] = {full_node_server.node_id.hex(): full_node_server.node_id.hex()}
-        else:
-            wallet_node.config["trusted_peers"] = {}
+            wallet_node.server.trusted_peers = {full_node_server.node_id}
         await server_2.start_client(PeerInfo(self_hostname, uint16(full_node_server._port)), None)
 
         for i in range(0, num_blocks):
@@ -414,11 +407,8 @@ class TestCATWallet:
 
         ph = await wallet.get_new_puzzlehash()
         if trusted:
-            wallet_node.config["trusted_peers"] = {full_node_server.node_id.hex(): full_node_server.node_id.hex()}
-            wallet_node_2.config["trusted_peers"] = {full_node_server.node_id.hex(): full_node_server.node_id.hex()}
-        else:
-            wallet_node.config["trusted_peers"] = {}
-            wallet_node_2.config["trusted_peers"] = {}
+            wallet_node.server.trusted_peers = {full_node_server.node_id}
+            wallet_node_2.server.trusted_peers = {full_node_server.node_id}
         await server_2.start_client(PeerInfo(self_hostname, uint16(full_node_server._port)), None)
         await server_3.start_client(PeerInfo(self_hostname, uint16(full_node_server._port)), None)
 
@@ -505,13 +495,9 @@ class TestCATWallet:
 
         ph = await wallet_0.get_new_puzzlehash()
         if trusted:
-            wallet_node_0.config["trusted_peers"] = {full_node_server.node_id.hex(): full_node_server.node_id.hex()}
-            wallet_node_1.config["trusted_peers"] = {full_node_server.node_id.hex(): full_node_server.node_id.hex()}
-            wallet_node_2.config["trusted_peers"] = {full_node_server.node_id.hex(): full_node_server.node_id.hex()}
-        else:
-            wallet_node_0.config["trusted_peers"] = {}
-            wallet_node_1.config["trusted_peers"] = {}
-            wallet_node_2.config["trusted_peers"] = {}
+            wallet_node_0.server.trusted_peers = {full_node_server.node_id}
+            wallet_node_1.server.trusted_peers = {full_node_server.node_id}
+            wallet_node_2.server.trusted_peers = {full_node_server.node_id}
         await wallet_server_0.start_client(PeerInfo(self_hostname, uint16(full_node_server._port)), None)
         await wallet_server_1.start_client(PeerInfo(self_hostname, uint16(full_node_server._port)), None)
         await wallet_server_2.start_client(PeerInfo(self_hostname, uint16(full_node_server._port)), None)
@@ -625,11 +611,8 @@ class TestCATWallet:
 
         ph = await wallet.get_new_puzzlehash()
         if trusted:
-            wallet_node.config["trusted_peers"] = {full_node_server.node_id.hex(): full_node_server.node_id.hex()}
-            wallet_node_2.config["trusted_peers"] = {full_node_server.node_id.hex(): full_node_server.node_id.hex()}
-        else:
-            wallet_node.config["trusted_peers"] = {}
-            wallet_node_2.config["trusted_peers"] = {}
+            wallet_node.server.trusted_peers = {full_node_server.node_id}
+            wallet_node_2.server.trusted_peers = {full_node_server.node_id}
         await server_2.start_client(PeerInfo(self_hostname, uint16(full_node_server._port)), None)
         await server_3.start_client(PeerInfo(self_hostname, uint16(full_node_server._port)), None)
 
@@ -735,11 +718,8 @@ class TestCATWallet:
 
         ph = await wallet.get_new_puzzlehash()
         if trusted:
-            wallet_node.config["trusted_peers"] = {full_node_server.node_id.hex(): full_node_server.node_id.hex()}
-            wallet_node_2.config["trusted_peers"] = {full_node_server.node_id.hex(): full_node_server.node_id.hex()}
-        else:
-            wallet_node.config["trusted_peers"] = {}
-            wallet_node_2.config["trusted_peers"] = {}
+            wallet_node.server.trusted_peers = {full_node_server.node_id}
+            wallet_node_2.server.trusted_peers = {full_node_server.node_id}
         wallet_node.config["automatically_add_unknown_cats"] = autodiscovery
         wallet_node_2.config["automatically_add_unknown_cats"] = autodiscovery
         await server_2.start_client(PeerInfo(self_hostname, uint16(full_node_server._port)), None)

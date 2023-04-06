@@ -1610,4 +1610,4 @@ class FullNodeAPI:
         return msg
 
     def is_trusted(self, peer: WSChiaConnection) -> bool:
-        return self.server.is_trusted_peer(peer, self.full_node.config.get("trusted_peers", {}))
+        return self.server.is_trusted_peer(peer)
