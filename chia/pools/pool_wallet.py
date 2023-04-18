@@ -166,12 +166,9 @@ class PoolWallet:
                 f"to use this pooling wallet"
             )
 
-        if state.state == PoolSingletonState.SELF_POOLING.value:
+        if state.state == PoolSingletonState.SELF_POOLING:
             return cls._verify_self_pooled(state)
-        elif (
-            state.state == PoolSingletonState.FARMING_TO_POOL.value
-            or state.state == PoolSingletonState.LEAVING_POOL.value
-        ):
+        elif state.state == PoolSingletonState.FARMING_TO_POOL or state.state == PoolSingletonState.LEAVING_POOL:
             return cls._verify_pooling_state(state)
         else:
             return "Internal Error"
@@ -450,7 +447,7 @@ class PoolWallet:
             sent_to=[],
             memos=[],
             trade_id=None,
-            type=uint32(TransactionType.OUTGOING_TX.value),
+            type=TransactionType.OUTGOING_TX,
             name=spend_bundle.name(),
         )
         await standard_wallet.push_transaction(standard_wallet_record)
@@ -614,7 +611,7 @@ class PoolWallet:
             sent_to=[],
             trade_id=None,
             memos=[],
-            type=uint32(TransactionType.OUTGOING_TX.value),
+            type=TransactionType.OUTGOING_TX,
             name=signed_spend_bundle.name(),
         )
 
@@ -887,7 +884,7 @@ class PoolWallet:
             sent_to=[],
             memos=[],
             trade_id=None,
-            type=uint32(TransactionType.OUTGOING_TX.value),
+            type=TransactionType.OUTGOING_TX,
             name=full_spend.name(),
         )
 
