@@ -120,10 +120,10 @@ class CATWallet:
             )
             assert self.cat_info.limitations_program_hash != empty_bytes
         except Exception:
-            await wallet_state_manager.user_store.delete_wallet(self.id())
+            await wallet_state_manager.remove_wallet(self.id(), remove_cache=False, trigger_state_changed=False)
             raise
         if spend_bundle is None:
-            await wallet_state_manager.user_store.delete_wallet(self.id())
+            await wallet_state_manager.remove_wallet(self.id(), remove_cache=False, trigger_state_changed=False)
             raise ValueError("Failed to create spend.")
 
         await self.wallet_state_manager.add_new_wallet(self)
@@ -352,6 +352,9 @@ class CATWallet:
                 await self.puzzle_solution_received(coin_spend, parent_coin=coin_state[0].coin)
             except Exception as e:
                 self.log.debug(f"Exception: {e}, traceback: {traceback.format_exc()}")
+
+    async def coin_spent(self, coin: Coin, height: uint32, peer: WSChiaConnection) -> None:
+        pass
 
     async def puzzle_solution_received(self, coin_spend: CoinSpend, parent_coin: Coin) -> None:
         coin_name = coin_spend.coin.name()

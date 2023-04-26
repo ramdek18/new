@@ -175,6 +175,9 @@ class NFTWallet:
         assert cs is not None
         await self.puzzle_solution_received(cs, peer)
 
+    async def coin_spent(self, coin: Coin, height: uint32, _: WSChiaConnection) -> None:
+        await self.remove_coin(coin, height)
+
     async def puzzle_solution_received(self, coin_spend: CoinSpend, peer: WSChiaConnection) -> None:
         self.log.debug("Puzzle solution received to wallet: %s", self.wallet_info)
         coin_name = coin_spend.coin.name()
@@ -298,8 +301,7 @@ class NFTWallet:
                     if did_wallet_info.origin_coin.name() == self.did_id:
                         return
                 self.log.info(f"No NFT, deleting wallet {self.wallet_info.name} ...")
-                await self.wallet_state_manager.user_store.delete_wallet(self.wallet_info.id)
-                self.wallet_state_manager.wallets.pop(self.wallet_info.id)
+                await self.wallet_state_manager.remove_wallet(self.wallet_info.id)
         else:
             self.log.info("Tried removing NFT coin that doesn't exist: %s", coin.name())
 
