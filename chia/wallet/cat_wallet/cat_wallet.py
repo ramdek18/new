@@ -289,7 +289,11 @@ class CATWallet:
         if self.cost_of_single_tx is None:
             coin = spendable[0].coin
             txs = await self.generate_signed_transaction(
-                [uint64(coin.amount)], [coin.puzzle_hash], coins={coin}, ignore_max_send_amount=True
+                [uint64(coin.amount)],
+                [coin.puzzle_hash],
+                coins={coin},
+                memos=[[coin.puzzle_hash]],
+                ignore_max_send_amount=True,
             )
             assert txs[0].spend_bundle
             program: BlockGenerator = simple_solution_generator(txs[0].spend_bundle)
@@ -582,8 +586,7 @@ class CATWallet:
             )
             origin_id = list(chia_coins)[0].name()
             chia_tx = await self.standard_wallet.generate_signed_transaction(
-                uint64(0),
-                (await self.standard_wallet.get_puzzle_hash(not reuse_puzhash)),
+                [],
                 fee=uint64(fee - amount_to_claim),
                 coins=chia_coins,
                 origin_id=origin_id,  # We specify this so that we know the coin that is making the announcement
@@ -612,8 +615,12 @@ class CATWallet:
             )
             selected_amount = sum([c.amount for c in chia_coins])
             chia_tx = await self.standard_wallet.generate_signed_transaction(
-                uint64(selected_amount + amount_to_claim - fee),
-                (await self.standard_wallet.get_puzzle_hash(not reuse_puzhash)),
+                [
+                    Payment(
+                        await self.standard_wallet.get_puzzle_hash(not reuse_puzhash),
+                        uint64(selected_amount + amount_to_claim - fee),
+                    )
+                ],
                 coins=chia_coins,
                 negative_change_allowed=True,
                 coin_announcements_to_consume={announcement_to_assert} if announcement_to_assert is not None else None,
@@ -705,7 +712,7 @@ class CATWallet:
                         break
             else:
                 change_puzhash = await self.get_new_inner_hash()
-            primaries.append(Payment(change_puzhash, uint64(change), []))
+            primaries.append(Payment(change_puzhash, uint64(change)))
 
         # Loop through the coins we've selected and gather the information we need to spend them
         spendable_cat_list = []
@@ -819,9 +826,7 @@ class CATWallet:
 
         payments = []
         for amount, puzhash, memo_list in zip(amounts, puzzle_hashes, memos):
-            memos_with_hint: List[bytes] = [puzhash]
-            memos_with_hint.extend(memo_list)
-            payments.append(Payment(puzhash, amount, memos_with_hint))
+            payments.append(Payment(puzhash, amount, memo_list))
 
         payment_sum = sum([p.amount for p in payments])
         if not ignore_max_send_amount:

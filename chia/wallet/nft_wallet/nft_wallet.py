@@ -398,12 +398,10 @@ class NFTWallet:
         )
         # store the launcher transaction in the wallet state
         tx_record: Optional[TransactionRecord] = await self.standard_wallet.generate_signed_transaction(
-            uint64(amount),
-            nft_puzzles.LAUNCHER_PUZZLE_HASH,
+            [Payment(nft_puzzles.LAUNCHER_PUZZLE_HASH, uint64(amount))],
             fee,
             origin.name(),
             coins,
-            None,
             False,
             announcement_set,
         )
@@ -513,6 +511,7 @@ class NFTWallet:
             [puzzle_hash],
             fee,
             {nft_coin_info.coin},
+            memos=[[puzzle_hash]],
             metadata_update=(key, uri),
             reuse_puzhash=reuse_puzhash,
         )
@@ -641,9 +640,7 @@ class NFTWallet:
 
         payments = []
         for amount, puzhash, memo_list in zip(amounts, puzzle_hashes, memos):
-            memos_with_hint: List[bytes] = [puzhash]
-            memos_with_hint.extend(memo_list)
-            payments.append(Payment(puzhash, amount, memos_with_hint))
+            payments.append(Payment(puzhash, amount, memo_list))
 
         payment_sum = sum([p.amount for p in payments])
         unsigned_spend_bundle, chia_tx = await self.generate_unsigned_spendbundle(
@@ -947,12 +944,11 @@ class NFTWallet:
                 if wallet.type() == WalletType.STANDARD_WALLET:
                     payments = royalty_payments[asset] if asset in royalty_payments else []
                     payment_sum = sum(p.amount for _, p in payments)
+                    additional = (
+                        [Payment(DESIRED_OFFER_MOD_HASH, uint64(payment_sum))] if payment_sum > 0 or old else []
+                    )
                     tx = await wallet.generate_signed_transaction(
-                        abs(amount),
-                        DESIRED_OFFER_MOD_HASH,
-                        primaries=[Payment(DESIRED_OFFER_MOD_HASH, uint64(payment_sum), [])]
-                        if payment_sum > 0 or old
-                        else [],
+                        [Payment(DESIRED_OFFER_MOD_HASH, uint64(abs(amount)))] + additional,
                         fee=fee,
                         coins=offered_coins_by_asset[asset],
                         puzzle_announcements_to_consume=announcements_to_assert,
@@ -965,6 +961,7 @@ class NFTWallet:
                         [DESIRED_OFFER_MOD_HASH],
                         fee=fee_left_to_pay,
                         coins=offered_coins_by_asset[asset],
+                        memos=[[DESIRED_OFFER_MOD_HASH]],
                         puzzle_announcements_to_consume=announcements_to_assert,
                         trade_prices_list=[
                             list(price)
@@ -979,6 +976,7 @@ class NFTWallet:
                         [DESIRED_OFFER_MOD_HASH, DESIRED_OFFER_MOD_HASH],
                         fee=fee_left_to_pay,
                         coins=offered_coins_by_asset[asset],
+                        memos=[[DESIRED_OFFER_MOD_HASH], [DESIRED_OFFER_MOD_HASH]],
                         puzzle_announcements_to_consume=announcements_to_assert,
                     )
                 all_transactions.extend(txs)
@@ -1022,7 +1020,6 @@ class NFTWallet:
                                         Payment(
                                             DESIRED_OFFER_MOD_HASH,
                                             uint64(sum(p.amount for _, p in duplicate_payments)),
-                                            [],
                                         ).as_condition_args()
                                     ],
                                 )
@@ -1118,15 +1115,16 @@ class NFTWallet:
         for nft_coin_info in nft_list:
             unft = UncurriedNFT.uncurry(*nft_coin_info.full_puzzle.uncurry())
             assert unft is not None
-            puzzle_hashes_to_sign = [unft.p2_puzzle.get_tree_hash()]
+            puzzle_hash = unft.p2_puzzle.get_tree_hash()
             if not first:
                 fee = uint64(0)
             nft_tx_record.extend(
                 await self.generate_signed_transaction(
                     [uint64(nft_coin_info.coin.amount)],
-                    puzzle_hashes_to_sign,
+                    [puzzle_hash],
                     fee,
                     {nft_coin_info.coin},
+                    memos=[[puzzle_hash]],
                     new_owner=did_id,
                     new_did_inner_hash=did_inner_hash,
                     reuse_puzhash=reuse_puzhash,
@@ -1166,6 +1164,7 @@ class NFTWallet:
                     [uint64(nft_coin_info.coin.amount)],
                     [puzzle_hash],
                     coins={nft_coin_info.coin},
+                    memos=[[puzzle_hash]],
                     fee=fee,
                     new_owner=b"",
                     new_did_inner_hash=b"",
@@ -1196,7 +1195,7 @@ class NFTWallet:
         unft = UncurriedNFT.uncurry(*nft_coin_info.full_puzzle.uncurry())
         assert unft is not None
         nft_id = unft.singleton_launcher_id
-        puzzle_hashes_to_sign = [unft.p2_puzzle.get_tree_hash()]
+        puzzle_hash = unft.p2_puzzle.get_tree_hash()
         did_inner_hash = b""
         additional_bundles = []
         if did_id != b"":
@@ -1205,9 +1204,10 @@ class NFTWallet:
 
         nft_tx_record = await self.generate_signed_transaction(
             [uint64(nft_coin_info.coin.amount)],
-            puzzle_hashes_to_sign,
+            [puzzle_hash],
             fee,
             {nft_coin_info.coin},
+            memos=[[puzzle_hash]],
             new_owner=did_id,
             new_did_inner_hash=did_inner_hash,
             additional_bundles=additional_bundles,

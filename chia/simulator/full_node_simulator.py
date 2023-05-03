@@ -601,7 +601,7 @@ class FullNodeSimulator(FullNodeAPI):
             outputs: List[Payment] = []
             for amount in amounts:
                 puzzle_hash = await wallet.get_new_puzzlehash()
-                outputs.append(Payment(puzzle_hash, amount, []))
+                outputs.append(Payment(puzzle_hash, amount))
 
             transaction_records: List[TransactionRecord] = []
             outputs_iterator = iter(outputs)
@@ -612,11 +612,7 @@ class FullNodeSimulator(FullNodeAPI):
 
                 if len(outputs_group) > 0:
                     async with wallet.wallet_state_manager.lock:
-                        tx = await wallet.generate_signed_transaction(
-                            amount=outputs_group[0].amount,
-                            puzzle_hash=outputs_group[0].puzzle_hash,
-                            primaries=outputs_group[1:],
-                        )
+                        tx = await wallet.generate_signed_transaction(outputs_group)
                     await wallet.push_transaction(tx=tx)
                     transaction_records.append(tx)
                 else:

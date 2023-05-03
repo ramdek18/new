@@ -891,7 +891,7 @@ class DIDWallet:
         p2_solution = self.standard_wallet.make_solution(
             primaries=[
                 Payment(innerpuz.get_tree_hash(), uint64(coin.amount), [p2_puzzle.get_tree_hash()]),
-                Payment(innermessage, uint64(0), []),
+                Payment(innermessage, uint64(0)),
             ],
         )
         innersol = Program.to([1, p2_solution])
@@ -1236,7 +1236,7 @@ class DIDWallet:
         announcement_set.add(Announcement(launcher_coin.name(), announcement_message))
 
         tx_record: Optional[TransactionRecord] = await self.standard_wallet.generate_signed_transaction(
-            amount, genesis_launcher_puz.get_tree_hash(), fee, origin.name(), coins, None, False, announcement_set
+            [Payment(genesis_launcher_puz.get_tree_hash(), amount)], fee, origin.name(), coins, False, announcement_set
         )
 
         genesis_launcher_solution = Program.to([did_puzzle_hash, amount, bytes(0x80)])

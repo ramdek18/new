@@ -939,10 +939,8 @@ class WalletRpcApi:
 
         async with self.service.wallet_state_manager.lock:
             tx: TransactionRecord = await wallet.generate_signed_transaction(
-                amount,
-                puzzle_hash,
+                [Payment(puzzle_hash, amount, memos)],
                 fee,
-                memos=memos,
                 min_coin_amount=min_coin_amount,
                 max_coin_amount=max_coin_amount,
                 exclude_coin_amounts=exclude_coin_amounts,
@@ -1454,7 +1452,7 @@ class WalletRpcApi:
                     fee,
                     cat_discrepancy=cat_discrepancy,
                     coins=coins,
-                    memos=memos if memos else None,
+                    memos=memos if memos else [[puzzle_hash] for puzzle_hash in puzzle_hashes],
                     min_coin_amount=min_coin_amount,
                     max_coin_amount=max_coin_amount,
                     exclude_coin_amounts=exclude_coin_amounts,
@@ -1469,7 +1467,7 @@ class WalletRpcApi:
                 puzzle_hashes,
                 fee,
                 coins=coins,
-                memos=memos if memos else None,
+                memos=memos if memos else [[puzzle_hash] for puzzle_hash in puzzle_hashes],
                 min_coin_amount=min_coin_amount,
                 max_coin_amount=max_coin_amount,
                 exclude_coin_amounts=exclude_coin_amounts,
@@ -2586,6 +2584,7 @@ class WalletRpcApi:
                 [uint64(nft_coin_info.coin.amount)],
                 [puzzle_hash],
                 coins={nft_coin_info.coin},
+                memos=[[puzzle_hash]],
                 fee=fee,
                 new_owner=b"",
                 new_did_inner_hash=b"",
@@ -2863,25 +2862,18 @@ class WalletRpcApi:
         if "additions" not in request or len(request["additions"]) < 1:
             raise ValueError("Specify additions list")
 
-        additions: List[Dict] = request["additions"]
-        amount_0: uint64 = uint64(additions[0]["amount"])
-        assert amount_0 <= self.service.constants.MAX_COIN_AMOUNT
-        puzzle_hash_0 = bytes32.from_hexstr(additions[0]["puzzle_hash"])
-        if len(puzzle_hash_0) != 32:
-            raise ValueError(f"Address must be 32 bytes. {puzzle_hash_0.hex()}")
-
-        memos_0 = [] if "memos" not in additions[0] else [mem.encode("utf-8") for mem in additions[0]["memos"]]
-
-        additional_outputs: List[Payment] = []
-        for addition in additions[1:]:
+        payments: List[Payment] = []
+        for addition in request["additions"]:
             receiver_ph = bytes32.from_hexstr(addition["puzzle_hash"])
             if len(receiver_ph) != 32:
                 raise ValueError(f"Address must be 32 bytes. {receiver_ph.hex()}")
             amount = uint64(addition["amount"])
             if amount > self.service.constants.MAX_COIN_AMOUNT:
                 raise ValueError(f"Coin amount cannot exceed {self.service.constants.MAX_COIN_AMOUNT}")
-            memos = [] if "memos" not in addition else [mem.encode("utf-8") for mem in addition["memos"]]
-            additional_outputs.append(Payment(receiver_ph, amount, memos))
+            memos = (
+                [bytes(receiver_ph)] if "memos" not in addition else [mem.encode("utf-8") for mem in addition["memos"]]
+            )
+            payments.append(Payment(receiver_ph, amount, memos))
 
         fee: uint64 = uint64(request.get("fee", 0))
         min_coin_amount: uint64 = uint64(request.get("min_coin_amount", 0))
@@ -2937,14 +2929,11 @@ class WalletRpcApi:
         async def _generate_signed_transaction() -> EndpointResult:
             if isinstance(wallet, Wallet):
                 tx = await wallet.generate_signed_transaction(
-                    amount_0,
-                    bytes32(puzzle_hash_0),
+                    payments,
                     fee,
                     coins=coins,
                     exclude_coins=exclude_coins,
                     ignore_max_send_amount=True,
-                    primaries=additional_outputs,
-                    memos=memos_0,
                     coin_announcements_to_consume=coin_announcements,
                     puzzle_announcements_to_consume=puzzle_announcements,
                     min_coin_amount=min_coin_amount,
@@ -2959,13 +2948,13 @@ class WalletRpcApi:
                 assert isinstance(wallet, CATWallet)
 
                 txs = await wallet.generate_signed_transaction(
-                    [amount_0] + [output.amount for output in additional_outputs],
-                    [bytes32(puzzle_hash_0)] + [output.puzzle_hash for output in additional_outputs],
+                    [payment.amount for payment in payments],
+                    [payment.puzzle_hash for payment in payments],
                     fee,
                     coins=coins,
                     exclude_cat_coins=exclude_coins,
                     ignore_max_send_amount=True,
-                    memos=[memos_0] + [output.memos for output in additional_outputs],
+                    memos=[payment.memos for payment in payments],
                     coin_announcements_to_consume=coin_announcements,
                     puzzle_announcements_to_consume=puzzle_announcements,
                     min_coin_amount=min_coin_amount,
