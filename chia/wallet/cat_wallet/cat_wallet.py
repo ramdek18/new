@@ -55,6 +55,7 @@ from chia.wallet.util.wallet_sync_utils import fetch_coin_spend_for_coin_state
 from chia.wallet.util.wallet_types import WalletType
 from chia.wallet.wallet import Wallet
 from chia.wallet.wallet_coin_record import WalletCoinRecord
+from chia.wallet.wallet_coin_store import HashFilter, unspent_range
 from chia.wallet.wallet_info import WalletInfo
 
 if TYPE_CHECKING:
@@ -267,7 +268,10 @@ class CATWallet:
 
     async def get_confirmed_balance(self, record_list: Optional[Set[WalletCoinRecord]] = None) -> uint128:
         if record_list is None:
-            record_list = await self.wallet_state_manager.coin_store.get_unspent_coins_for_wallet(self.id())
+            result = await self.wallet_state_manager.coin_store.get_coin_records(
+                wallet_id=self.id(), spent_range=unspent_range
+            )
+            record_list = set(result.records)
 
         amount: uint128 = uint128(0)
         for record in record_list:
@@ -372,7 +376,10 @@ class CATWallet:
             )
         else:
             # The parent is not a CAT which means we need to scrub all of its children from our DB
-            child_coin_records = await self.wallet_state_manager.coin_store.get_coin_records_by_parent_id(coin_name)
+            result = await self.wallet_state_manager.coin_store.get_coin_records(
+                parent_coin_id_filter=HashFilter.include([coin_name])
+            )
+            child_coin_records = result.records
             if len(child_coin_records) > 0:
                 for record in child_coin_records:
                     if record.wallet_id == self.id():

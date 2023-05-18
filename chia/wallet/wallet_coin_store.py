@@ -3,7 +3,7 @@ from __future__ import annotations
 import sqlite3
 from dataclasses import dataclass
 from enum import IntEnum
-from typing import Dict, List, Optional, Set
+from typing import Dict, List, Optional
 
 from chia.types.blockchain_format.coin import Coin
 from chia.types.blockchain_format.sized_bytes import bytes32
@@ -16,6 +16,8 @@ from chia.util.streamable import Streamable, streamable
 from chia.wallet.util.query_filter import AmountFilter, FilterMode, HashFilter
 from chia.wallet.util.wallet_types import CoinType, WalletType
 from chia.wallet.wallet_coin_record import WalletCoinRecord
+
+unspent_range = UInt32Range(stop=uint32(0))
 
 
 class CoinRecordOrder(IntEnum):
@@ -102,16 +104,6 @@ class WalletCoinStore:
             except sqlite3.OperationalError:
                 pass
         return self
-
-    async def count_small_unspent(self, cutoff: int, coin_type: CoinType = CoinType.NORMAL) -> int:
-        amount_bytes = bytes(uint64(cutoff))
-        async with self.db_wrapper.reader_no_transaction() as conn:
-            row = await execute_fetchone(
-                conn,
-                "SELECT COUNT(*) FROM coin_record WHERE coin_type=? AND amount < ? AND spent=0",
-                (coin_type, amount_bytes),
-            )
-            return int(0 if row is None else row[0])
 
     # Store CoinRecord in DB and ram cache
     async def add_coin_record(self, record: WalletCoinRecord, name: Optional[bytes32] = None) -> None:
@@ -263,23 +255,6 @@ class WalletCoinStore:
             total_count,
         )
 
-    async def get_coin_records_between(
-        self, wallet_id: int, start: int, end: int, reverse: bool = False, coin_type: CoinType = CoinType.NORMAL
-    ) -> List[WalletCoinRecord]:
-        """Return a list of coins between start and end index. List is in reverse chronological order.
-        start = 0 is most recent transaction
-        """
-        limit = end - start
-        query_str = "ORDER BY confirmed_height " + ("DESC" if reverse else "ASC")
-
-        async with self.db_wrapper.reader_no_transaction() as conn:
-            rows = await conn.execute_fetchall(
-                f"SELECT * FROM coin_record WHERE coin_type=? AND"
-                f" wallet_id=? {query_str}, rowid LIMIT {start}, {limit}",
-                (coin_type, wallet_id),
-            )
-        return [self.coin_record_from_row(row) for row in rows]
-
     async def get_first_coin_height(self) -> Optional[uint32]:
         """Returns height of first confirmed coin"""
         async with self.db_wrapper.reader_no_transaction() as conn:
@@ -289,43 +264,6 @@ class WalletCoinStore:
             return uint32(rows[0][0])
 
         return None
-
-    async def get_unspent_coins_for_wallet(
-        self, wallet_id: int, coin_type: CoinType = CoinType.NORMAL
-    ) -> Set[WalletCoinRecord]:
-        """Returns set of CoinRecords that have not been spent yet for a wallet."""
-        async with self.db_wrapper.reader_no_transaction() as conn:
-            rows = await conn.execute_fetchall(
-                "SELECT * FROM coin_record WHERE coin_type=? AND wallet_id=? AND spent_height=0",
-                (coin_type, wallet_id),
-            )
-        return set(self.coin_record_from_row(row) for row in rows)
-
-    async def get_all_unspent_coins(self, coin_type: CoinType = CoinType.NORMAL) -> Set[WalletCoinRecord]:
-        """Returns set of CoinRecords that have not been spent yet for a wallet."""
-        async with self.db_wrapper.reader_no_transaction() as conn:
-            rows = await conn.execute_fetchall(
-                "SELECT * FROM coin_record WHERE coin_type=? AND spent_height=0", (coin_type,)
-            )
-        return set(self.coin_record_from_row(row) for row in rows)
-
-    # Checks DB and DiffStores for CoinRecords with puzzle_hash and returns them
-    async def get_coin_records_by_puzzle_hash(self, puzzle_hash: bytes32) -> List[WalletCoinRecord]:
-        """Returns a list of all coin records with the given puzzle hash"""
-        async with self.db_wrapper.reader_no_transaction() as conn:
-            rows = await conn.execute_fetchall("SELECT * from coin_record WHERE puzzle_hash=?", (puzzle_hash.hex(),))
-
-        return [self.coin_record_from_row(row) for row in rows]
-
-    # Checks DB and DiffStores for CoinRecords with parent_coin_info and returns them
-    async def get_coin_records_by_parent_id(self, parent_coin_info: bytes32) -> List[WalletCoinRecord]:
-        """Returns a list of all coin records with the given parent id"""
-        async with self.db_wrapper.reader_no_transaction() as conn:
-            rows = await conn.execute_fetchall(
-                "SELECT * from coin_record WHERE coin_parent=?", (parent_coin_info.hex(),)
-            )
-
-        return [self.coin_record_from_row(row) for row in rows]
 
     async def rollback_to_block(self, height: int) -> None:
         """
