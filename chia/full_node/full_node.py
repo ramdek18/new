@@ -82,10 +82,13 @@ from chia.util.safe_cancel_task import cancel_task_safe
 # This is the result of calling peak_post_processing, which is then fed into peak_post_processing_2
 @dataclasses.dataclass
 class PeakPostProcessingResult:
+    peak_full_block: FullBlock
+    state_change_summary: StateChangeSummary
     mempool_peak_result: List[Tuple[SpendBundle, NPCResult, bytes32]]  # The result of calling MempoolManager.new_peak
     fns_peak_result: FullNodeStorePeakResult  # The result of calling FullNodeStore.new_peak
     hints: List[Tuple[bytes32, bytes]]  # The hints added to the DB
     lookup_coin_ids: List[bytes32]  # The coin IDs that we need to look up to notify wallets of changes
+    ip_sub_slot: Optional[EndOfSubSlotBundle]
 
 
 class FullNode:
@@ -419,10 +422,8 @@ class FullNode:
             full_peak: Optional[FullBlock] = await self.blockchain.get_full_peak()
             assert full_peak is not None
             state_change_summary = StateChangeSummary(peak, uint32(max(peak.height - 1, 0)), [], [], [])
-            ppp_result: PeakPostProcessingResult = await self.peak_post_processing(
-                full_peak, state_change_summary, None
-            )
-            await self.peak_post_processing_2(full_peak, None, state_change_summary, ppp_result)
+            ppp_result: PeakPostProcessingResult = await self.peak_post_processing(full_peak, state_change_summary)
+            await self.peak_post_processing_2(None, ppp_result)
         if self.config["send_uncompact_interval"] != 0:
             sanitize_weight_proof_only = False
             if "sanitize_weight_proof_only" in self.config:
@@ -577,6 +578,7 @@ class FullNode:
                 if not response:
                     raise ValueError(f"Error short batch syncing, invalid/no response for {height}-{end_height}")
                 async with self._blockchain_lock_high_priority:
+                    ppp_result: Optional[PeakPostProcessingResult] = None
                     state_change_summary: Optional[StateChangeSummary]
                     success, state_change_summary = await self.add_block_batch(response.blocks, peer, None)
                     if not success:
@@ -585,20 +587,20 @@ class FullNode:
                         try:
                             peak_fb: Optional[FullBlock] = await self.blockchain.get_full_peak()
                             assert peak_fb is not None
-                            ppp_result: PeakPostProcessingResult = await self.peak_post_processing(
+                            ppp_result = await self.peak_post_processing(
                                 peak_fb,
                                 state_change_summary,
-                                peer,
                             )
-                            await self.peak_post_processing_2(peak_fb, peer, state_change_summary, ppp_result)
                         except Exception:
                             # Still do post processing after cancel (or exception)
                             peak_fb = await self.blockchain.get_full_peak()
                             assert peak_fb is not None
-                            await self.peak_post_processing(peak_fb, state_change_summary, peer)
+                            await self.peak_post_processing(peak_fb, state_change_summary)
                             raise
                         finally:
                             self.log.info(f"Added blocks {height}-{end_height}")
+                    if ppp_result is not None:
+                        await self.peak_post_processing_2(peer, ppp_result)
         except (asyncio.CancelledError, Exception):
             self.sync_store.batch_syncing.remove(peer.peer_node_id)
             raise
@@ -1301,6 +1303,7 @@ class FullNode:
         if self._server is None:
             return None
 
+        ppp_result = None
         async with self._blockchain_lock_high_priority:
             await self.sync_store.clear_sync_info()
 
@@ -1309,10 +1312,9 @@ class FullNode:
             if peak_fb is not None:
                 assert peak is not None
                 state_change_summary = StateChangeSummary(peak, uint32(max(peak.height - 1, 0)), [], [], [])
-                ppp_result: PeakPostProcessingResult = await self.peak_post_processing(
-                    peak_fb, state_change_summary, None
-                )
-                await self.peak_post_processing_2(peak_fb, None, state_change_summary, ppp_result)
+                ppp_result = await self.peak_post_processing(peak_fb, state_change_summary)
+        if ppp_result is not None:
+            await self.peak_post_processing_2(None, ppp_result)
 
         if peak is not None and self.weight_proof_handler is not None:
             await self.weight_proof_handler.get_proof_of_weight(peak.header_hash)
@@ -1396,7 +1398,6 @@ class FullNode:
         self,
         block: FullBlock,
         state_change_summary: StateChangeSummary,
-        peer: Optional[WSChiaConnection],
     ) -> PeakPostProcessingResult:
         """
         Must be called under self.blockchain.lock. This updates the internal state of the full node with the
@@ -1457,18 +1458,6 @@ class FullNode:
             self.blockchain,
         )
 
-        if fns_peak_result.new_signage_points is not None and peer is not None:
-            for index, sp in fns_peak_result.new_signage_points:
-                assert (
-                    sp.cc_vdf is not None
-                    and sp.cc_proof is not None
-                    and sp.rc_vdf is not None
-                    and sp.rc_proof is not None
-                )
-                await self.signage_point_post_processing(
-                    RespondSignagePoint(index, sp.cc_vdf, sp.cc_proof, sp.rc_vdf, sp.rc_proof), peer, sub_slots[1]
-                )
-
         if sub_slots[1] is None:
             assert record.ip_sub_slot_total_iters(self.constants) == 0
         # Ensure the signage point is also in the store, for consistency
@@ -1499,19 +1488,41 @@ class FullNode:
                 self.log.info(f"Saving previous generator for height {block.height}")
                 self.full_node_store.previous_generator = generator_arg
 
-        return PeakPostProcessingResult(mempool_new_peak_result, fns_peak_result, hints_to_add, lookup_coin_ids)
+        return PeakPostProcessingResult(
+            block,
+            state_change_summary,
+            mempool_new_peak_result,
+            fns_peak_result,
+            hints_to_add,
+            lookup_coin_ids,
+            sub_slots[1],
+        )
 
     async def peak_post_processing_2(
         self,
-        block: FullBlock,
         peer: Optional[WSChiaConnection],
-        state_change_summary: StateChangeSummary,
         ppp_result: PeakPostProcessingResult,
     ) -> None:
         """
         Does NOT need to be called under the blockchain lock. Handle other parts of post processing like communicating
         with peers
         """
+        block = ppp_result.peak_full_block
+        state_change_summary = ppp_result.state_change_summary
+        if ppp_result.fns_peak_result.new_signage_points is not None and peer is not None:
+            for index, sp in ppp_result.fns_peak_result.new_signage_points:
+                assert (
+                    sp.cc_vdf is not None
+                    and sp.cc_proof is not None
+                    and sp.rc_vdf is not None
+                    and sp.rc_proof is not None
+                )
+                await self.signage_point_post_processing(
+                    RespondSignagePoint(index, sp.cc_vdf, sp.cc_proof, sp.rc_vdf, sp.rc_proof),
+                    peer,
+                    ppp_result.ip_sub_slot,
+                )
+
         record = state_change_summary.peak
         for bundle, result, spend_name in ppp_result.mempool_peak_result:
             self.log.debug(f"Added transaction to mempool: {spend_name}")
@@ -1700,7 +1711,7 @@ class FullNode:
                 elif added == AddBlockResult.NEW_PEAK:
                     # Only propagate blocks which extend the blockchain (becomes one of the heads)
                     assert state_change_summary is not None
-                    ppp_result = await self.peak_post_processing(block, state_change_summary, peer)
+                    ppp_result = await self.peak_post_processing(block, state_change_summary)
 
                 elif added == AddBlockResult.ADDED_AS_ORPHAN:
                     self.log.info(
@@ -1714,14 +1725,13 @@ class FullNode:
                 # the node stays in sync
                 if added == AddBlockResult.NEW_PEAK:
                     assert state_change_summary is not None
-                    await self.peak_post_processing(block, state_change_summary, peer)
+                    await self.peak_post_processing(block, state_change_summary)
                 raise
 
             validation_time = time.time() - validation_start
 
         if ppp_result is not None:
-            assert state_change_summary is not None
-            await self.peak_post_processing_2(block, peer, state_change_summary, ppp_result)
+            await self.peak_post_processing_2(peer, ppp_result)
 
         percent_full_str = (
             (
