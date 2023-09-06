@@ -188,6 +188,9 @@ class Err(Enum):
     TOO_MANY_ANNOUNCEMENTS = 144
     CHIP_0013_VALIDATION = 145
 
+    INVALID_SIZE = 142
+    INVALID_HASH = 143
+
 
 class ValidationError(Exception):
     def __init__(self, code: Err, error_msg: str = ""):
