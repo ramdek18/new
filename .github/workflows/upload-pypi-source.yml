@@ -164,11 +164,16 @@ jobs:
 
   upload_source_dist:
     name: Lint and Upload source distribution
-    runs-on: [ubuntu-latest]
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     needs:
       - mypy
       - check
+    strategy:
+      matrix:
+        python-version: [3.8]
+        os: [ubuntu-latest]
+
     steps:
     - name: Add safe git directory
       uses: chia-network/actions/git-mark-workspace-safe@main
@@ -186,13 +191,14 @@ jobs:
 
     - uses: ./.github/actions/install
       with:
-        python-version: ${{ matrix.python.major_dot_minor }}
+        python-version: ${{ matrix.python-version }}
         development: true
 
     - uses: chia-network/actions/activate-venv@main
 
     - name: Build source distribution
       run: |
+        # TODO: let poetry do this?
         python -m build --sdist --outdir dist .
 
     - name: Upload artifacts

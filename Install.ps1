@@ -9,7 +9,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-$extras = @()
+$extras = @("upnp")
 $blspy = $False
 if ($d)
 {
@@ -17,10 +17,10 @@ if ($d)
     $blspy = $True
 }
 
-$editable_cli = "--editable"
+$editable = $True
 if ($i)
 {
-    $editable_cli = ""
+    $editable = $False
 }
 
 if ([Environment]::Is64BitOperatingSystem -eq $false)
@@ -102,21 +102,22 @@ if ($openSSLVersion -lt 269488367)
     Write-Output "Anything before 1.1.1n is vulnerable to CVE-2022-0778."
 }
 
-if ($extras.length -gt 0)
+$extras_cli = @()
+foreach ($extra in $extras)
 {
-    $extras_cli = $extras -join ","
-    $extras_cli = "[$extras_cli]"
-}
-else
-{
-    $extras_cli = ""
+    $extras_cli += "--extras"
+    $extras_cli += $extra
 }
 
-py -$pythonVersion -m venv venv
+./Setup-poetry.ps1 -pythonVersion "$pythonVersion"
+.penv/Scripts/poetry env use "$pythonVersion"
+.penv/Scripts/poetry install @extras_cli
 
-venv\scripts\python -m pip install --upgrade pip setuptools wheel
-venv\scripts\pip install --extra-index-url https://pypi.chia.net/simple/ miniupnpc==2.2.2
-venv\scripts\pip install $editable_cli ".$extras_cli" --extra-index-url https://pypi.chia.net/simple/
+if (-not $editable)
+{
+    .venv/Scripts/python -m pip install --no-deps .
+}
+
 
 if ($blspy)
 {
@@ -126,7 +127,7 @@ if ($blspy)
 if ($p)
 {
     $PREV_VIRTUAL_ENV = "$env:VIRTUAL_ENV"
-    $env:VIRTUAL_ENV = "venv"
+    $env:VIRTUAL_ENV = ".venv"
     .\Install-plotter.ps1 bladebit
     .\Install-plotter.ps1 madmax
     $env:VIRTUAL_ENV = "$PREV_VIRTUAL_ENV"
@@ -140,6 +141,6 @@ Write-Output ""
 Write-Output "Try the Quick Start Guide to running chia-blockchain:"
 Write-Output "https://github.com/Chia-Network/chia-blockchain/wiki/Quick-Start-Guide"
 Write-Output ""
-Write-Output "To install the GUI run '.\venv\scripts\Activate.ps1' then '.\Install-gui.ps1'."
+Write-Output "To install the GUI run '.\.venv\scripts\Activate.ps1' then '.\Install-gui.ps1'."
 Write-Output ""
-Write-Output "Type '.\venv\Scripts\Activate.ps1' and then 'chia init' to begin."
+Write-Output "Type '.\.venv\Scripts\Activate.ps1' and then 'chia init' to begin."

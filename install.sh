@@ -19,11 +19,12 @@ usage() {
 }
 
 PACMAN_AUTOMATED=
-EXTRAS=
+EXTRAS='--extras upnp'
 BLSPY_STUBS=
 SKIP_PACKAGE_INSTALL=
 PLOTTER_INSTALL=
-EDITABLE='-e'
+EDITABLE=1
+EDITABLE_CLI='-e'
 
 while getopts adilpsh flag
 do
@@ -31,11 +32,11 @@ do
     # automated
     a) PACMAN_AUTOMATED=--noconfirm;;
     # development
-    d) EXTRAS=${EXTRAS}dev,;BLSPY_STUBS=1;;
+    d) EXTRAS="${EXTRAS} --extras dev";BLSPY_STUBS=1;;
     # non-editable
-    i) EDITABLE='';;
+    i) EDITABLE_CLI='';EDITABLE=;;
     # legacy keyring
-    l) EXTRAS=${EXTRAS}legacy_keyring,;;
+    l) EXTRAS="${EXTRAS} --extras legacy_keyring";;
     p) PLOTTER_INSTALL=1;;
     # simple install
     s) SKIP_PACKAGE_INSTALL=1;;
@@ -303,40 +304,22 @@ if [ "$OPENSSL_VERSION_INT" -lt "269488367" ]; then
   echo "Your OS may have patched OpenSSL and not updated the version to 1.1.1n"
 fi
 
-# If version of `python` and "$INSTALL_PYTHON_VERSION" does not match, clear old version
-VENV_CLEAR=""
-if [ -e venv/bin/python ]; then
-  VENV_PYTHON_VER=$(venv/bin/python -V)
-  TARGET_PYTHON_VER=$($INSTALL_PYTHON_PATH -V)
-  if [ "$VENV_PYTHON_VER" != "$TARGET_PYTHON_VER" ]; then
-    echo "existing python version in venv is $VENV_PYTHON_VER while target python version is $TARGET_PYTHON_VER"
-    echo "Refreshing venv modules..."
-    VENV_CLEAR="--clear"
-  fi
-fi
-
-$INSTALL_PYTHON_PATH -m venv venv $VENV_CLEAR
+./setup-poetry.sh -c "${INSTALL_PYTHON_PATH}"
+.penv/bin/poetry env use "${INSTALL_PYTHON_PATH}"
+# shellcheck disable=SC2086
+.penv/bin/poetry install ${EXTRAS}
+ln -s .venv venv
 if [ ! -f "activate" ]; then
   ln -s venv/bin/activate .
 fi
 
-EXTRAS=${EXTRAS%,}
-if [ -n "${EXTRAS}" ]; then
-  EXTRAS=[${EXTRAS}]
+if [ -z "$EDITABLE" ]; then
+  .venv/bin/python -m pip install --no-deps .
 fi
 
-# shellcheck disable=SC1091
-. ./activate
-# pip 20.x+ supports Linux binary wheels
-python -m pip install --upgrade pip
-python -m pip install wheel
-#if [ "$INSTALL_PYTHON_VERSION" = "3.8" ]; then
-# This remains in case there is a diversion of binary wheels
-python -m pip install --extra-index-url https://pypi.chia.net/simple/ miniupnpc==2.2.2
-python -m pip install ${EDITABLE} ."${EXTRAS}" --extra-index-url https://pypi.chia.net/simple/
-
+# TODO: integrate with poetry?
 if [ -n "$BLSPY_STUBS" ]; then
-python -m pip install ${EDITABLE} ./blspy-stubs
+  .venv/bin/python -m pip install ${EDITABLE_CLI} ./blspy-stubs
 fi
 
 if [ -n "$PLOTTER_INSTALL" ]; then
