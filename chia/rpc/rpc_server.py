@@ -2,13 +2,14 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import enum
 import json
 import logging
 import traceback
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from ssl import SSLContext
-from typing import Any, AsyncIterator, Awaitable, Callable, Dict, Generic, List, Optional, TypeVar
+from typing import Any, AsyncIterator, Awaitable, Callable, ClassVar, Dict, Generic, List, Optional, Tuple, TypeVar
 
 from aiohttp import ClientConnectorError, ClientSession, ClientWebSocketResponse, WSMsgType, web
 from typing_extensions import Protocol, final
@@ -37,6 +38,33 @@ _T_RpcApiProtocol = TypeVar("_T_RpcApiProtocol", bound="RpcApiProtocol")
 class StateChangedProtocol(Protocol):
     def __call__(self, change: str, change_data: Optional[Dict[str, Any]]) -> None:
         ...
+
+
+class ServiceManagementAction(enum.Enum):
+    stop = enum.auto()
+    restart = enum.auto()
+
+
+@dataclass(frozen=True)
+class ServiceManagementMessage(Protocol):
+    action: ServiceManagementAction
+    done_event: asyncio.Event = field(default_factory=asyncio.Event)
+    # TODO: is this overly complicated passing this data out of the object to pass
+    #       it back in?
+    # TODO: does this need to be in the protocol?  might be how the callback and
+    #       data back in are linked in terms of hinting
+    # data: T
+
+    __match_args__: ClassVar[Tuple[str, ...]] = ()
+
+
+# TODO: bare not empty?
+@dataclass(frozen=True)
+class EmptyServiceManagementMessage:
+    action: ServiceManagementAction
+    done_event: asyncio.Event = field(default_factory=asyncio.Event)
+
+    __match_args__: ClassVar[Tuple[str, ...]] = ()
 
 
 class RpcServiceProtocol(Protocol):
@@ -71,7 +99,10 @@ class RpcServiceProtocol(Protocol):
         ...
 
     @contextlib.asynccontextmanager
-    async def manage(self) -> AsyncIterator[None]:
+    async def manage(
+        self,
+        management_message: Optional[ServiceManagementMessage] = None,
+    ) -> AsyncIterator[None]:
         yield  # pragma: no cover
 
 
@@ -82,7 +113,11 @@ class RpcApiProtocol(Protocol):
     All lower case with underscores as needed.
     """
 
-    def __init__(self, node: RpcServiceProtocol) -> None:
+    def __init__(
+        self,
+        node: RpcServiceProtocol,
+        management_request: Optional[Callable[[ServiceManagementMessage], Awaitable[None]]] = None,
+    ) -> None:
         ...
 
     @property

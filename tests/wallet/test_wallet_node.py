@@ -13,6 +13,7 @@ import pytest
 from chia.protocols import wallet_protocol
 from chia.protocols.protocol_message_types import ProtocolMessageTypes
 from chia.protocols.wallet_protocol import CoinState
+from chia.rpc.rpc_server import ServiceManagementAction
 from chia.server.outbound_message import Message, make_msg
 from chia.simulator.block_tools import test_constants
 from chia.types.blockchain_format.sized_bytes import bytes32
@@ -25,10 +26,10 @@ from chia.util.errors import Err
 from chia.util.ints import uint8, uint32, uint64, uint128
 from chia.util.keychain import Keychain, KeyData, generate_mnemonic
 from chia.wallet.util.tx_config import DEFAULT_TX_CONFIG
-from chia.wallet.wallet_node import Balance, WalletNode
+from chia.wallet.wallet_node import Balance, WalletNode, WalletServiceManagementMessage
 from tests.conftest import ConsensusMode
 from tests.util.misc import CoinGenerator
-from tests.util.setup_nodes import OldSimulatorsAndWallets
+from tests.util.setup_nodes import OldSimulatorsAndWallets, SimulatorsAndWallets
 from tests.util.time_out_assert import time_out_assert
 
 
@@ -393,18 +394,22 @@ async def test_unique_puzzle_hash_subscriptions(simulator_and_wallet: OldSimulat
 @pytest.mark.limit_consensus_modes(allowed=[ConsensusMode.PLAIN, ConsensusMode.HARD_FORK_2_0], reason="save time")
 @pytest.mark.anyio
 async def test_get_balance(
-    simulator_and_wallet: OldSimulatorsAndWallets, self_hostname: str, default_400_blocks: List[FullBlock]
+    simulator_and_wallet_new: SimulatorsAndWallets, self_hostname: str, default_400_blocks: List[FullBlock]
 ) -> None:
-    [full_node_api], [(wallet_node, wallet_server)], bt = simulator_and_wallet
-    full_node_server = full_node_api.full_node.server
+    full_node_api = simulator_and_wallet_new.simulators[0].peer_api
+    wallet_node = simulator_and_wallet_new.wallets[0].node
+    wallet_server = simulator_and_wallet_new.wallets[0].peer_server
+    full_node_server = simulator_and_wallet_new.simulators[0].peer_server
 
     def wallet_synced() -> bool:
         return full_node_server.node_id in wallet_node.synced_peers
 
     async def restart_with_fingerprint(fingerprint: Optional[int]) -> None:
-        wallet_node._close()
-        await wallet_node._await_closed(shutting_down=False)
-        await wallet_node._start_with_fingerprint(fingerprint=fingerprint)
+        # TODO: private...  cut it out
+        assert simulator_and_wallet_new.wallets[0].rpc_api._management_request is not None
+        await simulator_and_wallet_new.wallets[0].rpc_api._management_request(
+            WalletServiceManagementMessage(ServiceManagementAction.restart, fingerprint=fingerprint)
+        )
 
     wallet_id = uint32(1)
     initial_fingerprint = wallet_node.logged_in_fingerprint
@@ -496,7 +501,7 @@ async def test_add_states_from_peer_untrusted_shutdown(
     wallet = wallet_node.wallet_state_manager.main_wallet
     await full_node_api.farm_rewards_to_wallet(1, wallet)
     # Close to trigger the shutdown
-    wallet_node._close()
+    wallet_node._shut_down = True
     coin_generator = CoinGenerator()
     # Generate enough coin states to fill up the max number validation/add tasks.
     coin_states = [CoinState(coin_generator.get().coin, i, i) for i in range(3000)]
