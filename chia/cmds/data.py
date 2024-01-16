@@ -8,10 +8,11 @@ from typing import Any, Callable, Coroutine, Dict, List, Optional, TypeVar, Unio
 import click
 
 from chia.cmds import options
+from chia.cmds.param_types import Bytes32ParamType
 from chia.types.blockchain_format.sized_bytes import bytes32
+from chia.util.ints import uint64
 
 _T = TypeVar("_T")
-
 
 FC = TypeVar("FC", bound=Union[Callable[..., Any], click.Command])
 
@@ -67,7 +68,7 @@ def create_data_store_id_option() -> Callable[[FC], FC]:
         "-store",
         "--id",
         help="The hexadecimal store id.",
-        type=str,
+        type=Bytes32ParamType(),
         required=True,
     )
 
@@ -94,26 +95,24 @@ def create_rpc_port_option() -> Callable[[FC], FC]:
     )
 
 
-def create_fee_option() -> Callable[[FC], FC]:
+def create_root_hash_option() -> Callable[[FC], FC]:
     return click.option(
-        "-m",
-        "--fee",
-        help="Set the fees for the transaction, in XCH",
-        type=str,
-        default=None,
-        show_default=True,
+        "-r",
+        "--root_hash",
+        help="The hexadecimal root hash",
+        type=Bytes32ParamType(),
         required=False,
     )
 
 
 @data_cmd.command("create_data_store", help="Create a new data store")
 @create_rpc_port_option()
-@create_fee_option()
+@options.create_fee()
 @click.option("--verbose", is_flag=True, help="Enable verbose output.")
 @options.create_fingerprint()
 def create_data_store(
     data_rpc_port: int,
-    fee: Optional[str],
+    fee: Optional[uint64],
     verbose: bool,
     fingerprint: Optional[int],
 ) -> None:
@@ -125,13 +124,13 @@ def create_data_store(
 @data_cmd.command("get_value", help="Get the value for a given key and store")
 @create_data_store_id_option()
 @create_key_option()
-@click.option("-r", "--root_hash", help="The hexadecimal root hash", type=str, required=False)
+@create_root_hash_option()
 @create_rpc_port_option()
 @options.create_fingerprint()
 def get_value(
-    id: str,
+    id: bytes32,
     key_string: str,
-    root_hash: Optional[str],
+    root_hash: Optional[bytes32],
     data_rpc_port: int,
     fingerprint: Optional[int],
 ) -> None:
@@ -144,13 +143,13 @@ def get_value(
 @create_data_store_id_option()
 @create_changelist_option()
 @create_rpc_port_option()
-@create_fee_option()
+@options.create_fee()
 @options.create_fingerprint()
 def update_data_store(
-    id: str,
+    id: bytes32,
     changelist_string: str,
     data_rpc_port: int,
-    fee: str,
+    fee: Optional[uint64],
     fingerprint: Optional[int],
 ) -> None:
     from chia.cmds.data_funcs import update_data_store_cmd
@@ -168,12 +167,12 @@ def update_data_store(
 
 @data_cmd.command("get_keys", help="Get all keys for a given store")
 @create_data_store_id_option()
-@click.option("-r", "--root_hash", help="The hexadecimal root hash", type=str, required=False)
+@create_root_hash_option()
 @create_rpc_port_option()
 @options.create_fingerprint()
 def get_keys(
-    id: str,
-    root_hash: Optional[str],
+    id: bytes32,
+    root_hash: Optional[bytes32],
     data_rpc_port: int,
     fingerprint: Optional[int],
 ) -> None:
@@ -184,12 +183,12 @@ def get_keys(
 
 @data_cmd.command("get_keys_values", help="Get all keys and values for a given store")
 @create_data_store_id_option()
-@click.option("-r", "--root_hash", help="The hexadecimal root hash", type=str, required=False)
+@create_root_hash_option()
 @create_rpc_port_option()
 @options.create_fingerprint()
 def get_keys_values(
-    id: str,
-    root_hash: Optional[str],
+    id: bytes32,
+    root_hash: Optional[bytes32],
     data_rpc_port: int,
     fingerprint: Optional[int],
 ) -> None:
@@ -203,7 +202,7 @@ def get_keys_values(
 @create_rpc_port_option()
 @options.create_fingerprint()
 def get_root(
-    id: str,
+    id: bytes32,
     data_rpc_port: int,
     fingerprint: Optional[int],
 ) -> None:
@@ -225,7 +224,7 @@ def get_root(
 @create_rpc_port_option()
 @options.create_fingerprint()
 def subscribe(
-    id: str,
+    id: bytes32,
     urls: List[str],
     data_rpc_port: int,
     fingerprint: Optional[int],
@@ -241,7 +240,7 @@ def subscribe(
 @create_rpc_port_option()
 @options.create_fingerprint()
 def remove_subscription(
-    id: str,
+    id: bytes32,
     urls: List[str],
     data_rpc_port: int,
     fingerprint: Optional[int],
@@ -257,7 +256,7 @@ def remove_subscription(
 @options.create_fingerprint()
 @click.option("--retain", is_flag=True, help="Retain .dat files")
 def unsubscribe(
-    id: str,
+    id: bytes32,
     data_rpc_port: int,
     fingerprint: Optional[int],
     retain: bool,
@@ -271,14 +270,14 @@ def unsubscribe(
     "get_kv_diff", help="Get the inserted and deleted keys and values between an initial and a final hash"
 )
 @create_data_store_id_option()
-@click.option("-hash_1", "--hash_1", help="Initial hash", type=str)
-@click.option("-hash_2", "--hash_2", help="Final hash", type=str)
+@click.option("-hash_1", "--hash_1", help="Initial hash", type=Bytes32ParamType(), required=True)
+@click.option("-hash_2", "--hash_2", help="Final hash", type=Bytes32ParamType(), required=True)
 @create_rpc_port_option()
 @options.create_fingerprint()
 def get_kv_diff(
-    id: str,
-    hash_1: str,
-    hash_2: str,
+    id: bytes32,
+    hash_1: bytes32,
+    hash_2: bytes32,
     data_rpc_port: int,
     fingerprint: Optional[int],
 ) -> None:
@@ -292,7 +291,7 @@ def get_kv_diff(
 @create_rpc_port_option()
 @options.create_fingerprint()
 def get_root_history(
-    id: str,
+    id: bytes32,
     data_rpc_port: int,
     fingerprint: Optional[int],
 ) -> None:
@@ -341,7 +340,7 @@ def add_missing_files(
 
 
 @data_cmd.command("add_mirror", help="Publish mirror urls on chain")
-@click.option("-i", "--id", help="Store id", type=str, required=True)
+@create_data_store_id_option()
 @click.option(
     "-a", "--amount", help="Amount to spend for this mirror, in mojos", type=int, default=0, show_default=True
 )
@@ -353,14 +352,14 @@ def add_missing_files(
     type=str,
     multiple=True,
 )
-@create_fee_option()
+@options.create_fee()
 @create_rpc_port_option()
 @options.create_fingerprint()
 def add_mirror(
-    id: str,
+    id: bytes32,
     amount: int,
     urls: List[str],
-    fee: Optional[str],
+    fee: Optional[uint64],
     data_rpc_port: int,
     fingerprint: Optional[int],
 ) -> None:
@@ -379,13 +378,13 @@ def add_mirror(
 
 
 @data_cmd.command("delete_mirror", help="Delete an owned mirror by its coin id")
-@click.option("-c", "--coin_id", help="Coin id", type=str, required=True)
-@create_fee_option()
+@click.option("-c", "--coin_id", help="Coin id", type=Bytes32ParamType(), required=True)
+@options.create_fee()
 @create_rpc_port_option()
 @options.create_fingerprint()
 def delete_mirror(
-    coin_id: str,
-    fee: Optional[str],
+    coin_id: bytes32,
+    fee: Optional[uint64],
     data_rpc_port: int,
     fingerprint: Optional[int],
 ) -> None:
@@ -402,11 +401,11 @@ def delete_mirror(
 
 
 @data_cmd.command("get_mirrors", help="Get a list of all mirrors for a given store")
-@click.option("-i", "--id", help="Store id", type=str, required=True)
+@create_data_store_id_option()
 @create_rpc_port_option()
 @options.create_fingerprint()
 def get_mirrors(
-    id: str,
+    id: bytes32,
     data_rpc_port: int,
     fingerprint: Optional[int],
 ) -> None:
@@ -460,7 +459,7 @@ def get_owned_stores(
 @create_rpc_port_option()
 @options.create_fingerprint()
 def get_sync_status(
-    id: str,
+    id: bytes32,
     data_rpc_port: int,
     fingerprint: Optional[int],
 ) -> None:

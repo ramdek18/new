@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 
 from chia.data_layer.data_layer_wallet import Mirror, SingletonRecord
 from chia.pools.pool_wallet_info import PoolWalletInfo
@@ -1256,7 +1256,7 @@ class WalletRpcClient(RpcClient):
         return [TransactionRecord.from_json_dict_convenience(tx) for tx in response["transactions"]]
 
     async def get_notifications(
-        self, ids: Optional[List[bytes32]] = None, pagination: Optional[Tuple[Optional[int], Optional[int]]] = None
+        self, ids: Optional[Sequence[bytes32]] = None, pagination: Optional[Tuple[Optional[int], Optional[int]]] = None
     ) -> List[Notification]:
         request: Dict[str, Any] = {}
         if ids is not None:
@@ -1277,7 +1277,7 @@ class WalletRpcClient(RpcClient):
             for notification in response["notifications"]
         ]
 
-    async def delete_notifications(self, ids: Optional[List[bytes32]] = None) -> bool:
+    async def delete_notifications(self, ids: Optional[Sequence[bytes32]] = None) -> bool:
         request: Dict[str, Any] = {}
         if ids is not None:
             request["ids"] = [id.hex() for id in ids]
