@@ -641,6 +641,7 @@ class WeightProofHandler:
                 # end of wp summaries, local chain is longer or equal to wp chain
                 break
             if local_ses is None or local_ses.get_hash() != received_summaries[idx].get_hash():
+                log.debug(f"mismatch at index {idx} out of {len(ses_heights)} height {summary_height}")
                 break
             fork_point_index = idx
 

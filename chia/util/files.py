@@ -5,7 +5,7 @@ import logging
 import os
 import shutil
 from pathlib import Path
-from typing import Union
+from typing import Union, Dict
 
 from aiofiles import tempfile
 from typing_extensions import Literal
@@ -67,19 +67,11 @@ async def write_file_async(
     Writes the provided data to a temporary file and then moves it to the final destination.
     """
 
-    # Create the parent directory if necessary
-    os.makedirs(file_path.parent, mode=dir_mode, exist_ok=True)
+    temp_file_path = await write_to_temp_file(file_path, data, dir_mode)
+    await move_file_and_clean(file_path, temp_file_path, file_mode)
 
-    mode: Literal["w+", "w+b"] = "w+" if type(data) is str else "w+b"
-    temp_file_path: Path
-    async with tempfile.NamedTemporaryFile(dir=file_path.parent, mode=mode, delete=False) as f:
-        # Ignoring type error since it is not obvious how to tie the type of the data
-        # being passed in to the type of the file object, etc.
-        temp_file_path = f.name  # type: ignore[assignment]
-        await f.write(data)  # type: ignore[arg-type]
-        await f.flush()
-        os.fsync(f.fileno())
 
+async def move_file_and_clean(file_path: Path, temp_file_path: Path, file_mode: int = 0o600) -> None:
     try:
         await move_file_async(temp_file_path, file_path)
     except Exception:
@@ -93,3 +85,18 @@ async def write_file_async(
                 os.remove(temp_file_path)
         except Exception:
             log.exception(f"Failed to remove temp file {temp_file_path}")
+
+
+async def write_to_temp_file(file_path: Path, data: Union[str, bytes], dir_mode: int = 0o700) -> Path:
+    # Create the parent directory if necessary
+    os.makedirs(file_path.parent, mode=dir_mode, exist_ok=True)
+    mode: Literal["w+", "w+b"] = "w+" if type(data) is str else "w+b"
+    temp_file_path: Path
+    async with tempfile.NamedTemporaryFile(dir=file_path.parent, mode=mode, delete=False) as f:
+        # Ignoring type error since it is not obvious how to tie the type of the data
+        # being passed in to the type of the file object, etc.
+        temp_file_path = f.name  # type: ignore[assignment]
+        await f.write(data)  # type: ignore[arg-type]
+        await f.flush()
+        os.fsync(f.fileno())
+    return temp_file_path
