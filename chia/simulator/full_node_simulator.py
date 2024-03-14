@@ -39,7 +39,7 @@ class _Default:
 
 default = _Default()
 
-timeout_per_block = 5
+timeout_per_block = 15
 
 
 async def wait_for_coins_in_wallet(coins: Set[Coin], wallet: Wallet, timeout: Optional[float] = 5):
