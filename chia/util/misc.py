@@ -34,6 +34,7 @@ from typing import (
     get_origin,
 )
 
+import anyio
 import psutil
 from typing_extensions import Protocol
 
@@ -227,9 +228,10 @@ class SignalHandlers:
         try:
             yield self
         finally:
-            # TODO: log errors?
-            # TODO: return to previous signal handlers?
-            await asyncio.gather(*self.tasks)
+            with anyio.CancelScope(shield=True):
+                # TODO: log errors?
+                # TODO: return to previous signal handlers?
+                await asyncio.gather(*self.tasks)
 
     def remove_done_handlers(self) -> None:
         self.tasks = [task for task in self.tasks if not task.done()]
@@ -391,7 +393,8 @@ async def split_async_manager(manager: AsyncContextManager[object], object: T) -
     try:
         yield split
     finally:
-        await split.exit(if_needed=True)
+        with anyio.CancelScope(shield=True):
+            await split.exit(if_needed=True)
 
 
 class ValuedEventSentinel:

@@ -29,6 +29,7 @@ from typing import (
     final,
 )
 
+import anyio
 from chia_rs import AugSchemeMPL
 from packaging.version import Version
 
@@ -348,33 +349,34 @@ class FullNode:
             try:
                 yield
             finally:
-                self._shut_down = True
-                if self._init_weight_proof is not None:
-                    self._init_weight_proof.cancel()
+                with anyio.CancelScope(shield=True):
+                    self._shut_down = True
+                    if self._init_weight_proof is not None:
+                        self._init_weight_proof.cancel()
 
-                # blockchain is created in _start and in certain cases it may not exist here during _close
-                if self._blockchain is not None:
-                    self.blockchain.shut_down()
-                # same for mempool_manager
-                if self._mempool_manager is not None:
-                    self.mempool_manager.shut_down()
+                    # blockchain is created in _start and in certain cases it may not exist here during _close
+                    if self._blockchain is not None:
+                        self.blockchain.shut_down()
+                    # same for mempool_manager
+                    if self._mempool_manager is not None:
+                        self.mempool_manager.shut_down()
 
-                if self.full_node_peers is not None:
-                    asyncio.create_task(self.full_node_peers.close())
-                if self.uncompact_task is not None:
-                    self.uncompact_task.cancel()
-                if self._transaction_queue_task is not None:
-                    self._transaction_queue_task.cancel()
-                cancel_task_safe(task=self.wallet_sync_task, log=self.log)
-                cancel_task_safe(task=self._sync_task, log=self.log)
+                    if self.full_node_peers is not None:
+                        asyncio.create_task(self.full_node_peers.close())
+                    if self.uncompact_task is not None:
+                        self.uncompact_task.cancel()
+                    if self._transaction_queue_task is not None:
+                        self._transaction_queue_task.cancel()
+                    cancel_task_safe(task=self.wallet_sync_task, log=self.log)
+                    cancel_task_safe(task=self._sync_task, log=self.log)
 
-                for task_id, task in list(self.full_node_store.tx_fetch_tasks.items()):
-                    cancel_task_safe(task, self.log)
-                if self._init_weight_proof is not None:
-                    await asyncio.wait([self._init_weight_proof])
-                if self._sync_task is not None:
-                    with contextlib.suppress(asyncio.CancelledError):
-                        await self._sync_task
+                    for task_id, task in list(self.full_node_store.tx_fetch_tasks.items()):
+                        cancel_task_safe(task, self.log)
+                    if self._init_weight_proof is not None:
+                        await asyncio.wait([self._init_weight_proof])
+                    if self._sync_task is not None:
+                        with contextlib.suppress(asyncio.CancelledError):
+                            await self._sync_task
 
     @property
     def block_store(self) -> BlockStore:
@@ -476,15 +478,18 @@ class FullNode:
             inc_status, err = await self.add_transaction(entry.transaction, entry.spend_name, peer, entry.test)
             entry.done.set((inc_status, err))
         except asyncio.CancelledError:
+            # TODO: ack! consuming cancellation
             error_stack = traceback.format_exc()
             self.log.debug(f"Cancelling _handle_one_transaction, closing: {error_stack}")
         except Exception:
-            error_stack = traceback.format_exc()
-            self.log.error(f"Error in _handle_one_transaction, closing: {error_stack}")
-            if peer is not None:
-                await peer.close()
+            with anyio.CancelScope(shield=True):
+                error_stack = traceback.format_exc()
+                self.log.error(f"Error in _handle_one_transaction, closing: {error_stack}")
+                if peer is not None:
+                    await peer.close()
         finally:
-            self.add_transaction_semaphore.release()
+            with anyio.CancelScope(shield=True):
+                self.add_transaction_semaphore.release()
 
     async def _handle_transactions(self) -> None:
         while not self._shut_down:
@@ -610,16 +615,20 @@ class FullNode:
                             )
                             await self.peak_post_processing_2(peak_fb, peer, state_change_summary, ppp_result)
                         except Exception:
-                            # Still do post processing after cancel (or exception)
-                            peak_fb = await self.blockchain.get_full_peak()
-                            assert peak_fb is not None
-                            await self.peak_post_processing(peak_fb, state_change_summary, peer)
-                            raise
+                            # TODO: maybe?  i don't know if we should shield here or not
+                            with anyio.CancelScope(shield=True):
+                                # TODO: this isn't actually handling cancellation despite the comment below
+                                # Still do post processing after cancel (or exception)
+                                peak_fb = await self.blockchain.get_full_peak()
+                                assert peak_fb is not None
+                                await self.peak_post_processing(peak_fb, state_change_summary, peer)
+                                raise
                         finally:
                             self.log.info(f"Added blocks {height}-{end_height}")
         except (asyncio.CancelledError, Exception):
-            self.sync_store.batch_syncing.remove(peer.peer_node_id)
-            raise
+            with anyio.CancelScope(shield=True):
+                self.sync_store.batch_syncing.remove(peer.peer_node_id)
+                raise
         self.sync_store.batch_syncing.remove(peer.peer_node_id)
         return True
 
@@ -669,8 +678,9 @@ class FullNode:
                 for block in reversed(blocks):
                     await self.add_block(block, peer)
         except (asyncio.CancelledError, Exception):
-            self.sync_store.decrement_backtrack_syncing(node_id=peer.peer_node_id)
-            raise
+            with anyio.CancelScope(shield=True):
+                self.sync_store.decrement_backtrack_syncing(node_id=peer.peer_node_id)
+                raise
 
         self.sync_store.decrement_backtrack_syncing(node_id=peer.peer_node_id)
         return found_fork_point
@@ -975,14 +985,16 @@ class FullNode:
                 await self.blockchain.warmup(fork_point)
                 await self.sync_from_fork_point(fork_point, target_peak.height, target_peak.header_hash, summaries)
         except asyncio.CancelledError:
+            # TODO: ack! consuming cancellation
             self.log.warning("Syncing failed, CancelledError")
         except Exception as e:
             tb = traceback.format_exc()
             self.log.error(f"Error with syncing: {type(e)}{tb}")
         finally:
-            if self._shut_down:
-                return None
-            await self._finish_sync()
+            with anyio.CancelScope(shield=True):
+                if self._shut_down:
+                    return None
+                await self._finish_sync()
 
     async def request_validate_wp(
         self, peak_header_hash: bytes32, peak_height: uint32, peak_weight: uint128
@@ -1028,8 +1040,9 @@ class FullNode:
         try:
             validated, fork_point, summaries = await self.weight_proof_handler.validate_weight_proof(response.wp)
         except Exception as e:
-            await weight_proof_peer.close(600)
-            raise ValueError(f"Weight proof validation threw an error {e}")
+            with anyio.CancelScope(shield=True):
+                await weight_proof_peer.close(600)
+                raise ValueError(f"Weight proof validation threw an error {e}")
         if not validated:
             await weight_proof_peer.close(600)
             raise ValueError("Weight proof validation failed")
@@ -1089,8 +1102,9 @@ class FullNode:
             except Exception as e:
                 self.log.error(f"Exception fetching {start_height} to {end_height} from peer {e}")
             finally:
-                # finished signal with None
-                await batch_queue.put(None)
+                with anyio.CancelScope(shield=True):
+                    # finished signal with None
+                    await batch_queue.put(None)
 
         async def validate_block_batches(
             inner_batch_queue: asyncio.Queue[Optional[Tuple[WSChiaConnection, List[FullBlock]]]]
@@ -1788,12 +1802,13 @@ class FullNode:
                     # Should never reach here, all the cases are covered
                     raise RuntimeError(f"Invalid result from add_block {added}")
             except asyncio.CancelledError:
-                # We need to make sure to always call this method even when we get a cancel exception, to make sure
-                # the node stays in sync
-                if added == AddBlockResult.NEW_PEAK:
-                    assert state_change_summary is not None
-                    await self.peak_post_processing(block, state_change_summary, peer)
-                raise
+                with anyio.CancelScope(shield=True):
+                    # We need to make sure to always call this method even when we get a cancel exception, to make sure
+                    # the node stays in sync
+                    if added == AddBlockResult.NEW_PEAK:
+                        assert state_change_summary is not None
+                        await self.peak_post_processing(block, state_change_summary, peer)
+                    raise
 
             validation_time = time.monotonic() - validation_start
 
@@ -2196,10 +2211,11 @@ class FullNode:
         try:
             await self.add_block(block, raise_on_disconnected=True)
         except Exception as e:
-            self.log.warning(f"Consensus error validating block: {e}")
-            if timelord_peer is not None:
-                # Only sends to the timelord who sent us this VDF, to reset them to the correct peak
-                await self.send_peak_to_timelords(peer=timelord_peer)
+            with anyio.CancelScope(shield=True):
+                self.log.warning(f"Consensus error validating block: {e}")
+                if timelord_peer is not None:
+                    # Only sends to the timelord who sent us this VDF, to reset them to the correct peak
+                    await self.send_peak_to_timelords(peer=timelord_peer)
         return None
 
     async def add_end_of_sub_slot(
@@ -2329,11 +2345,13 @@ class FullNode:
             try:
                 cost_result = await self.mempool_manager.pre_validate_spendbundle(transaction, tx_bytes, spend_name)
             except ValidationError as e:
-                self.mempool_manager.remove_seen(spend_name)
-                return MempoolInclusionStatus.FAILED, e.code
+                with anyio.CancelScope(shield=True):
+                    self.mempool_manager.remove_seen(spend_name)
+                    return MempoolInclusionStatus.FAILED, e.code
             except Exception:
-                self.mempool_manager.remove_seen(spend_name)
-                raise
+                with anyio.CancelScope(shield=True):
+                    self.mempool_manager.remove_seen(spend_name)
+                    raise
             async with self.blockchain.priority_mutex.acquire(priority=BlockchainMutexPriority.low):
                 if self.mempool_manager.get_spendbundle(spend_name) is not None:
                     self.mempool_manager.remove_seen(spend_name)

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import dataclasses
 import logging
 import traceback
@@ -8,6 +9,7 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Any, AsyncIterator, Callable, Dict, List, Optional, Tuple, Type, TypeVar
 
+import anyio
 import click
 from aiohttp import ClientConnectorCertificateError, ClientConnectorError
 
@@ -115,35 +117,37 @@ async def get_any_service_client(
     if rpc_port is None:
         rpc_port = config[node_type]["rpc_port"]
     # select node client type based on string
-    if use_ssl:
-        node_client = await client_type.create(self_hostname, uint16(rpc_port), root_path=root_path, net_config=config)
-    else:
-        node_client = await client_type.create(self_hostname, uint16(rpc_port), root_path=None, net_config=None)
 
-    try:
-        # check if we can connect to node
-        await validate_client_connection(node_client, node_type, rpc_port, consume_errors)
-        yield node_client, config
-    except ResponseFailureError as e:
-        if not consume_errors:
-            raise
+    async with contextlib.AsyncExitStack() as exit_stack:
+        if use_ssl:
+            node_client = await exit_stack.enter_async_context(
+                client_type.create_as_context(self_hostname, uint16(rpc_port), root_path=root_path, net_config=config),
+            )
+        else:
+            node_client = await exit_stack.enter_async_context(
+                client_type.create_as_context(self_hostname, uint16(rpc_port), root_path=None, net_config=None),
+            )
 
-        response = dict(e.response)
-        tb = response.pop("traceback", None)
+        try:
+            # check if we can connect to node
+            await validate_client_connection(node_client, node_type, rpc_port, consume_errors)
+            yield node_client, config
+        except ResponseFailureError as e:
+            if not consume_errors:
+                raise
 
-        print(f"{ResponseFailureError(response=response)}")
+            response = dict(e.response)
+            tb = response.pop("traceback", None)
 
-        if tb is not None:
-            print(f"Traceback:\n{tb}")
-    except Exception as e:  # this is only here to make the errors more user-friendly.
-        if not consume_errors or isinstance(e, CliRpcConnectionError) or isinstance(e, click.Abort):
-            # CliRpcConnectionError will be handled by click.
-            raise
-        print(f"Exception from '{node_type}' {e}:\n{traceback.format_exc()}")
+            print(f"{ResponseFailureError(response=response)}")
 
-    finally:
-        node_client.close()  # this can run even if already closed, will just do nothing.
-        await node_client.await_closed()
+            if tb is not None:
+                print(f"Traceback:\n{tb}")
+        except Exception as e:  # this is only here to make the errors more user-friendly.
+            if not consume_errors or isinstance(e, CliRpcConnectionError) or isinstance(e, click.Abort):
+                # CliRpcConnectionError will be handled by click.
+                raise
+            print(f"Exception from '{node_type}' {e}:\n{traceback.format_exc()}")
 
 
 async def get_wallet(root_path: Path, wallet_client: WalletRpcClient, fingerprint: Optional[int]) -> int:
@@ -231,9 +235,10 @@ async def get_wallet(root_path: Path, wallet_client: WalletRpcClient, fingerprin
             if log_in_response["success"] is False:
                 raise CliRpcConnectionError(f"Login failed for fingerprint {selected_fingerprint}: {log_in_response}")
     finally:
-        # Closing the keychain proxy takes a moment, so we wait until after the login is complete
-        if keychain_proxy is not None:
-            await keychain_proxy.close()
+        with anyio.CancelScope(shield=True):
+            # Closing the keychain proxy takes a moment, so we wait until after the login is complete
+            if keychain_proxy is not None:
+                await keychain_proxy.close()
 
     return selected_fingerprint
 

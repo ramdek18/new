@@ -11,6 +11,8 @@ import sys
 import threading
 from typing import List, Optional, final, overload
 
+import anyio
+
 from chia._tests.util.misc import create_logger
 from chia.server.chia_policy import ChiaPolicy
 from chia.server.start_service import async_run
@@ -108,12 +110,13 @@ async def async_main(
         except asyncio.CancelledError:
             logger.info("exit: cancelled")
         finally:
-            logger.info("closing server")
-            server.close()
-            await server.wait_closed()
-            logger.info("server closed")
-            if file_task is not None:
-                await file_task
+            with anyio.CancelScope(shield=True):
+                logger.info("closing server")
+                server.close()
+                await server.wait_closed()
+                logger.info("server closed")
+                if file_task is not None:
+                    await file_task
 
 
 def main(connection_limit: int = 25) -> None:

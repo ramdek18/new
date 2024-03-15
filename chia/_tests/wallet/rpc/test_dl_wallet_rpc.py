@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 
+import anyio
 import pytest
 
 from chia._tests.conftest import ConsensusMode
@@ -218,11 +219,12 @@ class TestWalletRpc:
             await time_out_assert(15, client.dl_get_mirrors, [], launcher_id)
 
         finally:
-            # Checks that the RPC manages to stop the node
-            client.close()
-            client_2.close()
-            await client.await_closed()
-            await client_2.await_closed()
+            with anyio.CancelScope(shield=True):
+                # Checks that the RPC manages to stop the node
+                client.close()
+                client_2.close()
+                await client.await_closed()
+                await client_2.await_closed()
 
     @pytest.mark.limit_consensus_modes(allowed=[ConsensusMode.PLAIN, ConsensusMode.HARD_FORK_2_0], reason="save time")
     @pytest.mark.parametrize("trusted", [True, False])

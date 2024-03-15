@@ -18,6 +18,7 @@ from enum import Enum
 from typing import Any, AsyncIterator, Callable, Dict, Iterator, List, Tuple, Union
 
 import aiohttp
+import anyio
 import pytest
 
 # TODO: update after resolution in https://github.com/pytest-dev/pytest/issues/7469
@@ -1236,4 +1237,5 @@ async def recording_web_server_fixture(self_hostname: str) -> AsyncIterator[Reco
     try:
         yield server
     finally:
-        await server.await_closed()
+        with anyio.CancelScope(shield=True):
+            await server.await_closed()

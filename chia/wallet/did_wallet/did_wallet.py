@@ -7,6 +7,7 @@ import re
 import time
 from typing import TYPE_CHECKING, Any, ClassVar, Dict, List, Optional, Set, Tuple, cast
 
+import anyio
 from chia_rs import AugSchemeMPL, G1Element, G2Element
 
 from chia.protocols.wallet_protocol import CoinState
@@ -141,8 +142,9 @@ class DIDWallet:
         try:
             txs = await self.generate_new_decentralised_id(amount, DEFAULT_TX_CONFIG, fee)
         except Exception:
-            await wallet_state_manager.user_store.delete_wallet(self.id())
-            raise
+            with anyio.CancelScope(shield=True):
+                await wallet_state_manager.user_store.delete_wallet(self.id())
+                raise
 
         await self.wallet_state_manager.add_pending_transactions(txs)
 

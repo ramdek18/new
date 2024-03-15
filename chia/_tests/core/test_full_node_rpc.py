@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from typing import List
 
+import anyio
 import pytest
 from chia_rs import AugSchemeMPL
 from clvm.casts import int_to_bytes
@@ -421,9 +422,10 @@ async def test1(two_nodes_sim_and_wallets_services, self_hostname, consensus_mod
         assert blocks[3].header_hash != new_blocks[3].header_hash
 
     finally:
-        # Checks that the RPC manages to stop the node
-        client.close()
-        await client.await_closed()
+        with anyio.CancelScope(shield=True):
+            # Checks that the RPC manages to stop the node
+            client.close()
+            await client.await_closed()
 
 
 @pytest.mark.anyio
@@ -552,9 +554,10 @@ async def test_signage_points(two_nodes_sim_and_wallets_services, empty_blockcha
         assert res["reverted"]
 
     finally:
-        # Checks that the RPC manages to stop the node
-        client.close()
-        await client.await_closed()
+        with anyio.CancelScope(shield=True):
+            # Checks that the RPC manages to stop the node
+            client.close()
+            await client.await_closed()
 
 
 @pytest.mark.anyio
@@ -653,9 +656,10 @@ async def test_get_blockchain_state(one_wallet_and_one_simulator_services, self_
         )
 
     finally:
-        # Checks that the RPC manages to stop the node
-        client.close()
-        await client.await_closed()
+        with anyio.CancelScope(shield=True):
+            # Checks that the RPC manages to stop the node
+            client.close()
+            await client.await_closed()
 
 
 @pytest.mark.anyio
@@ -672,9 +676,10 @@ async def test_coin_name_not_in_request(one_node, self_hostname):
         with pytest.raises(ValueError, match="No coin_name in request"):
             await client.fetch("get_mempool_items_by_coin_name", {})
     finally:
-        # Checks that the RPC manages to stop the node
-        client.close()
-        await client.await_closed()
+        with anyio.CancelScope(shield=True):
+            # Checks that the RPC manages to stop the node
+            client.close()
+            await client.await_closed()
 
 
 @pytest.mark.anyio
@@ -695,8 +700,9 @@ async def test_coin_name_not_found_in_mempool(one_node, self_hostname):
         assert "mempool_items" in mempool_item
         assert len(mempool_item["mempool_items"]) == 0
     finally:
-        client.close()
-        await client.await_closed()
+        with anyio.CancelScope(shield=True):
+            client.close()
+            await client.await_closed()
 
 
 @pytest.mark.anyio
@@ -766,5 +772,6 @@ async def test_coin_name_found_in_mempool(one_node, self_hostname):
             assert coin_to_spend.name() in [coin.name() for coin in removals]
 
     finally:
-        client.close()
-        await client.await_closed()
+        with anyio.CancelScope(shield=True):
+            client.close()
+            await client.await_closed()

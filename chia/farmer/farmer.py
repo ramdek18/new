@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, AsyncIterator, ClassVar, Dict, List, Optional, Set, Tuple, Union, cast
 
 import aiohttp
+import anyio
 from chia_rs import AugSchemeMPL, G1Element, G2Element, PrivateKey
 
 from chia.consensus.constants import ConsensusConstants
@@ -195,18 +196,21 @@ class Farmer:
         try:
             yield
         finally:
-            self._shut_down = True
+            with anyio.CancelScope(shield=True):
+                self._shut_down = True
 
-            if self.cache_clear_task is not None:
-                await self.cache_clear_task
-            if self.update_pool_state_task is not None:
-                await self.update_pool_state_task
-            if self.keychain_proxy is not None:
-                proxy = self.keychain_proxy
-                self.keychain_proxy = None
-                await proxy.close()
-                await asyncio.sleep(0.5)  # https://docs.aiohttp.org/en/stable/client_advanced.html#graceful-shutdown
-            self.started = False
+                if self.cache_clear_task is not None:
+                    await self.cache_clear_task
+                if self.update_pool_state_task is not None:
+                    await self.update_pool_state_task
+                if self.keychain_proxy is not None:
+                    proxy = self.keychain_proxy
+                    self.keychain_proxy = None
+                    await proxy.close()
+                    await asyncio.sleep(
+                        0.5
+                    )  # https://docs.aiohttp.org/en/stable/client_advanced.html#graceful-shutdown
+                self.started = False
 
     def get_connections(self, request_node_type: Optional[NodeType]) -> List[Dict[str, Any]]:
         return default_get_connections(server=self.server, request_node_type=request_node_type)

@@ -14,6 +14,7 @@ from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, AsyncIterator, ClassVar, Dict, List, Optional, Set, Tuple, cast
 
+import anyio
 from chiavdf import create_discriminant, prove
 
 from chia.consensus.constants import ConsensusConstants
@@ -176,13 +177,14 @@ class Timelord:
         try:
             yield
         finally:
-            self._shut_down = True
-            for task in self.process_communication_tasks:
-                task.cancel()
-            if self.main_loop is not None:
-                self.main_loop.cancel()
-            if self.bluebox_pool is not None:
-                self.bluebox_pool.shutdown()
+            with anyio.CancelScope(shield=True):
+                self._shut_down = True
+                for task in self.process_communication_tasks:
+                    task.cancel()
+                if self.main_loop is not None:
+                    self.main_loop.cancel()
+                if self.bluebox_pool is not None:
+                    self.bluebox_pool.shutdown()
 
     def get_connections(self, request_node_type: Optional[NodeType]) -> List[Dict[str, Any]]:
         return default_get_connections(server=self.server, request_node_type=request_node_type)

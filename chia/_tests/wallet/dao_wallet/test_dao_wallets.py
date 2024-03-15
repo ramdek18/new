@@ -4,6 +4,7 @@ import asyncio
 import time
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
+import anyio
 import pytest
 
 from chia._tests.util.rpc import validate_get_routes
@@ -1994,10 +1995,11 @@ async def test_dao_rpc_client(
         assert filter_amount_resp["dao_info"]["filter_below_vote_amount"] == 30
 
     finally:
-        client_0.close()
-        client_1.close()
-        await client_0.await_closed()
-        await client_1.await_closed()
+        with anyio.CancelScope(shield=True):
+            client_0.close()
+            client_1.close()
+            await client_0.await_closed()
+            await client_1.await_closed()
 
 
 @pytest.mark.limit_consensus_modes(reason="does not depend on consensus rules")
@@ -2386,10 +2388,11 @@ async def test_dao_complex_spends(
         )
 
     finally:
-        client_0.close()
-        client_1.close()
-        await client_0.await_closed()
-        await client_1.await_closed()
+        with anyio.CancelScope(shield=True):
+            client_0.close()
+            client_1.close()
+            await client_0.await_closed()
+            await client_1.await_closed()
 
 
 @pytest.mark.limit_consensus_modes(reason="does not depend on consensus rules")
@@ -2787,10 +2790,11 @@ async def test_dao_cat_exits(
         await time_out_assert(20, cat_wallet_0.get_confirmed_balance, cat_amt)
 
     finally:
-        client_0.close()
-        client_1.close()
-        await client_0.await_closed()
-        await client_1.await_closed()
+        with anyio.CancelScope(shield=True):
+            client_0.close()
+            client_1.close()
+            await client_0.await_closed()
+            await client_1.await_closed()
 
 
 @pytest.mark.limit_consensus_modes(reason="does not depend on consensus rules")

@@ -25,6 +25,7 @@ from typing import (
 )
 
 import aiosqlite
+import anyio
 
 from chia.consensus.constants import ConsensusConstants
 from chia.full_node.full_node_api import FullNodeAPI
@@ -95,17 +96,18 @@ class Crawler:
         try:
             yield
         finally:
-            self._shut_down = True
+            with anyio.CancelScope(shield=True):
+                self._shut_down = True
 
-            if self.crawl_task is not None:
-                try:
-                    await asyncio.wait_for(self.crawl_task, timeout=10)  # wait 10 seconds before giving up
-                except asyncio.TimeoutError:
-                    self.log.error("Crawl task did not exit in time, killing task.")
-                    self.crawl_task.cancel()
-            if self.crawl_store is not None:
-                self.log.info("Closing connection to DB.")
-                await self.crawl_store.crawl_db.close()
+                if self.crawl_task is not None:
+                    try:
+                        await asyncio.wait_for(self.crawl_task, timeout=10)  # wait 10 seconds before giving up
+                    except asyncio.TimeoutError:
+                        self.log.error("Crawl task did not exit in time, killing task.")
+                        self.crawl_task.cancel()
+                if self.crawl_store is not None:
+                    self.log.info("Closing connection to DB.")
+                    await self.crawl_store.crawl_db.close()
 
     def __post_init__(self) -> None:
         # get db path

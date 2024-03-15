@@ -6,6 +6,8 @@ import logging
 import time
 from typing import TYPE_CHECKING, Any, AsyncIterator, ClassVar, Dict, List, Optional, cast
 
+import anyio
+
 from chia.rpc.rpc_server import StateChangedProtocol, default_get_connections
 from chia.server.introducer_peers import VettedPeer
 from chia.server.outbound_message import NodeType
@@ -42,9 +44,10 @@ class Introducer:
         try:
             yield
         finally:
-            self._shut_down = True
-            self._vetting_task.cancel()
-            # await self._vetting_task
+            with anyio.CancelScope(shield=True):
+                self._shut_down = True
+                self._vetting_task.cancel()
+                # await self._vetting_task
 
     async def on_connect(self, peer: WSChiaConnection) -> None:
         pass
@@ -105,13 +108,14 @@ class Introducer:
                         )
                         w.close()
                     except Exception as e:
-                        self.log.warning(f"Could not vet {peer}, removing. {type(e)}{str(e)}")
-                        peer.vetted = min(peer.vetted - 1, -1)
+                        with anyio.CancelScope(shield=True):
+                            self.log.warning(f"Could not vet {peer}, removing. {type(e)}{str(e)}")
+                            peer.vetted = min(peer.vetted - 1, -1)
 
-                        # if we have failed 6 times in a row, remove the peer
-                        if peer.vetted < -6:
-                            self.server.introducer_peers.remove(peer)
-                        continue
+                            # if we have failed 6 times in a row, remove the peer
+                            if peer.vetted < -6:
+                                self.server.introducer_peers.remove(peer)
+                            continue
 
                     self.log.info(f"Have vetted {peer} successfully!")
                     peer.vetted_timestamp = uint64(time.time())

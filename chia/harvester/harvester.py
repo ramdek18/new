@@ -9,6 +9,7 @@ from concurrent.futures.thread import ThreadPoolExecutor
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, AsyncIterator, ClassVar, Dict, List, Optional, Tuple, cast
 
+import anyio
 from typing_extensions import Literal
 
 from chia.consensus.constants import ConsensusConstants
@@ -137,11 +138,12 @@ class Harvester:
         try:
             yield
         finally:
-            self._shut_down = True
-            self.executor.shutdown(wait=True)
-            self.plot_manager.stop_refreshing()
-            self.plot_manager.reset()
-            self.plot_sync_sender.stop()
+            with anyio.CancelScope(shield=True):
+                self._shut_down = True
+                self.executor.shutdown(wait=True)
+                self.plot_manager.stop_refreshing()
+                self.plot_manager.reset()
+                self.plot_sync_sender.stop()
 
             await self.plot_sync_sender.await_closed()
 

@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Optional, Set, Tuple
 
+import anyio
 import pytest
 from clvm.casts import int_to_bytes
 
@@ -382,7 +383,8 @@ async def test_basic_reorg(tmp_dir: Path, db_version: int, bt: BlockTools) -> No
             assert peak is not None
             assert peak.height == initial_block_count - 10 + reorg_length - 1
         finally:
-            b.shut_down()
+            with anyio.CancelScope(shield=True):
+                b.shut_down()
 
 
 @pytest.mark.limit_consensus_modes(reason="save time")

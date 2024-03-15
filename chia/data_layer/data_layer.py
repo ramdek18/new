@@ -27,6 +27,7 @@ from typing import (
 )
 
 import aiohttp
+import anyio
 
 from chia.data_layer.data_layer_errors import KeyNotFoundError
 from chia.data_layer.data_layer_util import (
@@ -204,18 +205,20 @@ class DataLayer:
             try:
                 yield
             finally:
-                # TODO: review for anything else we need to do here
-                self._shut_down = True
-                if self._wallet_rpc is not None:
-                    self.wallet_rpc.close()
+                with anyio.CancelScope(shield=True):
+                    # TODO: review for anything else we need to do here
+                    self._shut_down = True
+                    if self._wallet_rpc is not None:
+                        self.wallet_rpc.close()
 
-                if self.periodically_manage_data_task is not None:
-                    try:
-                        self.periodically_manage_data_task.cancel()
-                    except asyncio.CancelledError:
-                        pass
-                if self._wallet_rpc is not None:
-                    await self.wallet_rpc.await_closed()
+                    if self.periodically_manage_data_task is not None:
+                        try:
+                            self.periodically_manage_data_task.cancel()
+                        except asyncio.CancelledError:
+                            # TODO: ack! consuming cancellation
+                            pass
+                    if self._wallet_rpc is not None:
+                        await self.wallet_rpc.await_closed()
 
     def _set_state_changed_callback(self, callback: StateChangedProtocol) -> None:
         self.state_changed_callback = callback
@@ -644,11 +647,12 @@ class DataLayer:
                                         f"Failed to upload files to, will retry later: {uploader} : {res_json}"
                                     )
             except Exception as e:
-                self.log.error(f"Exception uploading files, will retry later: tree id {tree_id}")
-                self.log.debug(f"Failed to upload files, cleaning local files: {type(e).__name__}: {e}")
-                if write_file_result.full_tree is not None:
-                    os.remove(write_file_result.full_tree)
-                os.remove(write_file_result.diff_tree)
+                with anyio.CancelScope(shield=True):
+                    self.log.error(f"Exception uploading files, will retry later: tree id {tree_id}")
+                    self.log.debug(f"Failed to upload files, cleaning local files: {type(e).__name__}: {e}")
+                    if write_file_result.full_tree is not None:
+                        os.remove(write_file_result.full_tree)
+                    os.remove(write_file_result.diff_tree)
             publish_generation -= 1
             root = await self.data_store.get_tree_root(tree_id=tree_id, generation=publish_generation)
 
