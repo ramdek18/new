@@ -62,5 +62,4 @@
     (list ASSERT_MY_AMOUNT my_amount)
   )
 
-
 )
