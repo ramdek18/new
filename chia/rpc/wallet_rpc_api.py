@@ -11,6 +11,7 @@ from chia_rs import AugSchemeMPL, G1Element, G2Element, PrivateKey
 from clvm_tools.binutils import assemble
 
 from chia.consensus.block_rewards import calculate_base_farmer_reward
+from chia.consensus.default_constants import DEFAULT_CONSTANTS
 from chia.data_layer.data_layer_errors import LauncherCoinNotFoundError
 from chia.data_layer.data_layer_util import dl_verify_proof
 from chia.data_layer.data_layer_wallet import DataLayerWallet
@@ -116,6 +117,7 @@ from chia.wallet.util.transaction_type import CLAWBACK_INCOMING_TRANSACTION_TYPE
 from chia.wallet.util.tx_config import DEFAULT_TX_CONFIG, CoinSelectionConfig, CoinSelectionConfigLoader, TXConfig
 from chia.wallet.util.wallet_sync_utils import fetch_coin_spend_for_coin_state
 from chia.wallet.util.wallet_types import CoinType, WalletType
+from chia.wallet.vault.vault_drivers import get_vault_hidden_puzzle_with_index
 from chia.wallet.vc_wallet.cr_cat_drivers import ProofsChecker
 from chia.wallet.vc_wallet.cr_cat_wallet import CRCATWallet
 from chia.wallet.vc_wallet.vc_store import VCProofs
@@ -296,6 +298,8 @@ class WalletRpcApi:
             "/gather_signing_info": self.gather_signing_info,
             "/apply_signatures": self.apply_signatures,
             "/submit_transactions": self.submit_transactions,
+            # VAULT
+            "/vault_create": self.vault_create,
         }
 
     def get_connections(self, request_node_type: Optional[NodeType]) -> List[Dict[str, Any]]:
@@ -384,7 +388,7 @@ class WalletRpcApi:
         if started is True:
             return {"fingerprint": fingerprint}
 
-        return {"success": False, "error": "Unknown Error"}
+        return {"success": False, "error": f"fingerprint {fingerprint} not found in keychain or keychain is empty"}
 
     async def get_logged_in_fingerprint(self, request: Dict[str, Any]) -> EndpointResult:
         return {"fingerprint": self.service.logged_in_fingerprint}
@@ -441,7 +445,7 @@ class WalletRpcApi:
         # Adding a key from 24 word mnemonic
         mnemonic = request["mnemonic"]
         try:
-            sk = await self.service.keychain_proxy.add_key(" ".join(mnemonic))
+            sk, _ = await self.service.keychain_proxy.add_key(" ".join(mnemonic))
         except KeyError as e:
             return {
                 "success": False,
@@ -758,6 +762,9 @@ class WalletRpcApi:
                 if "metadata" in request:
                     if type(request["metadata"]) is dict:
                         metadata = request["metadata"]
+
+                if not push:
+                    raise ValueError("Creation of DID wallet must be automatically pushed for now.")
 
                 async with self.service.wallet_state_manager.lock:
                     did_wallet_name: str = request.get("wallet_name", None)
@@ -1204,6 +1211,7 @@ class WalletRpcApi:
             "transaction": transaction,
             "transaction_id": TransactionRecord.from_json_dict_convenience(transaction).name,
             "transactions": transactions,
+            "unsigned_transactions": response["unsigned_transactions"],
         }
 
     @tx_endpoint(push=True, merge_spends=False)
@@ -4581,3 +4589,34 @@ class WalletRpcApi:
         return SubmitTransactionsResponse(
             await self.service.wallet_state_manager.submit_transactions(request.signed_transactions)
         )
+
+    ##########################################################################################
+    # VAULT
+    ##########################################################################################
+    @tx_endpoint(push=False)
+    async def vault_create(
+        self,
+        request: Dict[str, Any],
+        tx_config: TXConfig = DEFAULT_TX_CONFIG,
+        extra_conditions: Tuple[Condition, ...] = tuple(),
+        push: bool = False,
+    ) -> EndpointResult:
+        """
+        Create a new vault
+        """
+        assert self.service.wallet_state_manager
+        secp_pk = bytes.fromhex(str(request.get("secp_pk")))
+        hp_index = request.get("hp_index", 0)
+        hidden_puzzle_hash = get_vault_hidden_puzzle_with_index(hp_index).get_tree_hash()
+        bls_pk = G1Element.from_bytes(bytes.fromhex(str(request.get("bls_pk"))))
+        timelock = uint64(request["timelock"])
+        fee = uint64(request.get("fee", 0))
+        genesis_challenge = DEFAULT_CONSTANTS.GENESIS_CHALLENGE
+
+        vault_record = await self.service.wallet_state_manager.create_vault_wallet(
+            secp_pk, hidden_puzzle_hash, bls_pk, timelock, genesis_challenge, tx_config, fee=fee
+        )
+
+        return {
+            "transactions": [vault_record.to_json_dict_convenience(self.service.config)],
+        }

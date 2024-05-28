@@ -5,6 +5,7 @@ import tempfile
 from pathlib import Path
 
 import pytest
+from chia_rs import G1Element
 
 from chia._tests.conftest import ConsensusMode
 from chia._tests.environments.wallet import WalletEnvironment, WalletStateTransition, WalletTestFramework
@@ -989,8 +990,9 @@ async def test_cat_change_detection(
 
     # Mint CAT to ourselves, immediately spend it to an unhinted puzzle hash that we have manually added to the DB
     # We should pick up this coin as balance even though it is unhinted because it is "change"
+    assert isinstance(wallet_node_0.wallet_state_manager.observation_root, G1Element)
     pubkey_unhardened = master_pk_to_wallet_pk_unhardened(
-        wallet_node_0.wallet_state_manager.root_pubkey, uint32(100000000)
+        wallet_node_0.wallet_state_manager.observation_root, uint32(100000000)
     )
     inner_puzhash = puzzle_hash_for_pk(pubkey_unhardened)
     puzzlehash_unhardened = construct_cat_puzzle(
@@ -1011,7 +1013,7 @@ async def test_cat_change_detection(
     cat_amount_0 = uint64(100)
     cat_amount_1 = uint64(5)
 
-    tx = await client_0.send_transaction(1, cat_amount_0, addr, DEFAULT_TX_CONFIG)
+    tx = (await client_0.send_transaction(1, cat_amount_0, addr, DEFAULT_TX_CONFIG)).transaction
     spend_bundle = tx.spend_bundle
     assert spend_bundle is not None
 
